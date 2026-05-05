@@ -1,0 +1,1928 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Boels Rental Portal — In-Store Self Service</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            boels: { orange: '#FF6600', dark: '#0D1B2A', navy: '#1E3A5F' }
+          }
+        }
+      }
+    };
+  </script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <style>
+    [v-cloak]{display:none}
+    body{font-family:'Segoe UI',system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+    .line-clamp-2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+    ::-webkit-scrollbar{width:5px;height:5px}
+    ::-webkit-scrollbar-thumb{background:#FF6600;border-radius:3px}
+    .slide-right{animation:slideRight .3s ease}
+    @keyframes slideRight{from{transform:translateX(100%)}to{transform:translateX(0)}}
+    .fade-in{animation:fadeIn .2s ease}
+    @keyframes fadeIn{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:scale(1)}}
+    .pulse-dot{animation:pulseDot 1.5s infinite}
+    @keyframes pulseDot{0%,100%{opacity:1}50%{opacity:.4}}
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+<div id="app" v-cloak>
+
+  <!-- ═══════════════════════════════════════ HEADER ═══ -->
+  <header class="bg-[#0D1B2A] text-white sticky top-0 z-40 shadow-lg">
+    <div class="flex items-center justify-between px-4 md:px-6 h-16">
+      <button @click="setView('catalog')" class="flex items-center gap-3 hover:opacity-90 transition-opacity">
+        <div class="bg-[#FF6600] rounded px-3 py-1.5 font-black text-xl tracking-tight select-none">BOELS</div>
+        <div class="hidden sm:block leading-tight">
+          <div class="text-sm font-semibold">Rental Portal</div>
+          <div class="text-xs text-gray-400">Depot Self-Service</div>
+        </div>
+      </button>
+
+      <div class="flex-1 max-w-md mx-4 hidden md:block">
+        <input v-model="search" type="text" placeholder="Search equipment, projects..."
+          class="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF6600] focus:bg-white/15 transition-all" />
+      </div>
+
+      <div class="flex items-center gap-2">
+        <button @click="togglePanel('ai')"
+          :class="aiOpen ? 'bg-[#FF6600]' : 'bg-white/10 hover:bg-white/20'"
+          class="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all">
+          <span>🤖</span><span class="hidden sm:inline">AI Help</span>
+        </button>
+        <button @click="togglePanel('cart')"
+          :class="cartOpen ? 'bg-[#FF6600]' : 'bg-white/10 hover:bg-white/20'"
+          class="relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all">
+          <span>🛒</span><span class="hidden sm:inline">Cart</span>
+          <span v-if="cart.length > 0"
+            class="absolute -top-1.5 -right-1.5 bg-[#FF6600] text-white text-xs font-black w-5 h-5 rounded-full flex items-center justify-center leading-none">
+            {{cart.length}}
+          </span>
+        </button>
+        <button @click="customer ? setView('account') : (loginOpen=true)"
+          class="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#FF6600] hover:bg-[#CC5200] text-white text-sm font-semibold transition-all">
+          <span>{{customer ? '👤' : '🔑'}}</span>
+          <span class="hidden sm:inline">{{customer ? customer.name.split(' ')[0] : 'Login'}}</span>
+        </button>
+      </div>
+    </div>
+    <div class="md:hidden px-4 pb-3">
+      <input v-model="search" type="text" placeholder="Search equipment..."
+        class="w-full bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-sm text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#FF6600]" />
+    </div>
+  </header>
+
+  <!-- ═══════════════════════ CATEGORY FILTER ═══ -->
+  <div v-show="view==='catalog'" class="bg-white border-b border-gray-200 shadow-sm overflow-x-auto">
+    <div class="flex items-center gap-1 px-4 py-2 min-w-max">
+      <button v-for="cat in categories" :key="cat.id" @click="category=cat.id; search=''"
+        :class="category===cat.id ? 'bg-[#FF6600] text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100 hover:text-[#FF6600]'"
+        class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-all">
+        <span>{{cat.emoji}}</span><span>{{cat.label}}</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════ CATALOG VIEW ══════════════════════════════ -->
+  <main v-show="view==='catalog'" class="px-4 md:px-6 py-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5">
+      <div>
+        <h1 class="text-xl font-black text-[#0D1B2A]">
+          {{search ? `Results for "${search}"` : currentCategoryLabel}}
+        </h1>
+        <p class="text-sm text-gray-400 mt-0.5">{{filteredProducts.length}} item{{filteredProducts.length!==1?'s':''}} available</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-xs text-gray-500 hidden sm:inline">📍 Depot:</span>
+        <select v-model="depot"
+          class="text-xs border border-gray-200 rounded-lg px-3 py-1.5 bg-white text-gray-600 focus:outline-none focus:ring-2 focus:ring-[#FF6600]">
+          <option v-for="d in depots" :key="d">{{d}}</option>
+        </select>
+      </div>
+    </div>
+
+    <div v-if="filteredProducts.length>0"
+      class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div v-for="prod in filteredProducts" :key="prod.id"
+        class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 flex flex-col">
+        <div class="relative h-44 bg-gray-100 overflow-hidden">
+          <img :src="prod.image" :alt="prod.name"
+            class="w-full h-full object-cover transition-transform duration-300 hover:scale-105"
+            @error="e=>e.target.src='https://picsum.photos/seed/'+prod.id+'/600/400'"
+            loading="lazy" />
+          <span v-if="prod.popular"
+            class="absolute top-2 left-2 bg-[#FF6600] text-white text-xs font-bold px-2 py-0.5 rounded-full">Popular</span>
+          <span class="absolute top-2 right-2 bg-black/50 text-white text-xs px-2 py-0.5 rounded-full capitalize">
+            {{prod.category.replace(/-/g,' ')}}
+          </span>
+        </div>
+        <div class="flex flex-col flex-1 p-4">
+          <h3 class="font-bold text-[#0D1B2A] text-base leading-tight mb-1">{{prod.name}}</h3>
+          <p class="text-gray-500 text-xs leading-relaxed mb-3 line-clamp-2">{{prod.description}}</p>
+          <div class="grid grid-cols-2 gap-x-3 gap-y-1 mb-3">
+            <div v-for="spec in prod.specs.slice(0,4)" :key="spec.label" class="text-xs">
+              <span class="text-gray-400">{{spec.label}}: </span>
+              <span class="text-gray-700 font-medium">{{spec.value}}</span>
+            </div>
+          </div>
+          <div class="flex items-end gap-3 mb-3 mt-auto">
+            <div>
+              <div class="text-2xl font-black text-[#FF6600] leading-none">€{{prod.dailyRate}}</div>
+              <div class="text-xs text-gray-400">per day</div>
+            </div>
+            <div class="text-gray-300 text-sm">|</div>
+            <div>
+              <div class="text-lg font-bold text-[#1E3A5F] leading-none">€{{prod.weeklyRate}}</div>
+              <div class="text-xs text-gray-400">per week</div>
+            </div>
+          </div>
+          <button @click="addToCart(prod)" :disabled="isInCart(prod.id)"
+            :class="isInCart(prod.id)
+              ? 'bg-green-50 text-green-700 border border-green-300 cursor-default'
+              : 'bg-[#FF6600] hover:bg-[#CC5200] text-white active:scale-95'"
+            class="w-full py-2.5 rounded-lg font-semibold text-sm transition-all">
+            {{isInCart(prod.id) ? '✓ Added to Cart' : '+ Add to Cart'}}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div v-else class="text-center py-24">
+      <div class="text-6xl mb-4">🔍</div>
+      <p class="text-xl font-semibold text-gray-500">No equipment found</p>
+      <button @click="search=''; category='all'"
+        class="mt-3 text-[#FF6600] hover:underline text-sm">Clear filters</button>
+    </div>
+  </main>
+
+  <!-- Floating cart pill -->
+  <div v-if="view==='catalog' && cart.length>0 && !cartOpen"
+    class="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 fade-in">
+    <button @click="togglePanel('cart')"
+      class="bg-[#0D1B2A] text-white px-6 py-3 rounded-full shadow-2xl flex items-center gap-3 hover:bg-[#1E3A5F] transition-colors active:scale-95">
+      <span class="text-xl">🛒</span>
+      <span class="font-bold">{{cart.length}} item{{cart.length!==1?'s':''}} in cart</span>
+      <span class="bg-[#FF6600] text-white text-xs font-bold px-2.5 py-0.5 rounded-full">View →</span>
+    </button>
+  </div>
+
+  <!-- ═══════════════════════════ QUOTE VIEW ════════════════════════════ -->
+  <main v-show="view==='quote'" class="max-w-3xl mx-auto px-4 py-6">
+    <button @click="setView('catalog')"
+      class="text-sm text-gray-500 hover:text-[#FF6600] flex items-center gap-1.5 mb-6 transition-colors">
+      ← Back to catalog
+    </button>
+
+    <div class="bg-white rounded-2xl shadow-lg overflow-hidden">
+      <!-- Header stripe -->
+      <div class="bg-[#FF6600] px-6 py-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div>
+          <div class="font-black text-white text-2xl tracking-tight">BOELS</div>
+          <div class="text-orange-100 text-sm font-medium">Rental Quotation</div>
+        </div>
+        <div class="text-right">
+          <div class="text-white font-bold text-lg">{{quoteRef}}</div>
+          <div class="text-orange-100 text-sm">{{todayDate}}</div>
+        </div>
+      </div>
+
+      <!-- Customer / Depot info -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 p-6 bg-gray-50 border-b border-gray-100">
+        <div>
+          <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1.5">Customer</p>
+          <p class="font-bold text-[#0D1B2A]">{{customer ? customer.name : 'Walk-in Customer'}}</p>
+          <p class="text-sm text-gray-500">{{customer ? customer.company : '—'}}</p>
+          <p class="text-xs text-[#FF6600] font-semibold mt-0.5">{{customer ? customer.id : 'CASH'}}</p>
+        </div>
+        <div>
+          <p class="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1.5">Pickup Depot</p>
+          <p class="font-bold text-[#0D1B2A]">{{depot}}</p>
+          <p class="text-sm text-gray-500">Mon–Sat 07:00–18:00</p>
+          <p class="text-xs text-gray-400 mt-0.5">+31 (0) 88 222 0000</p>
+        </div>
+      </div>
+
+      <!-- Line items -->
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead>
+            <tr class="bg-[#0D1B2A] text-white">
+              <th class="text-left px-6 py-3 text-xs font-semibold uppercase tracking-wider">Equipment</th>
+              <th class="text-center px-3 py-3 text-xs font-semibold uppercase tracking-wider hidden sm:table-cell">Rate</th>
+              <th class="text-center px-3 py-3 text-xs font-semibold uppercase tracking-wider">Duration</th>
+              <th class="text-center px-3 py-3 text-xs font-semibold uppercase tracking-wider hidden sm:table-cell">Qty</th>
+              <th class="text-right px-6 py-3 text-xs font-semibold uppercase tracking-wider">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(item,i) in cart" :key="item.product.id"
+              :class="i%2===1?'bg-gray-50':'bg-white'">
+              <td class="px-6 py-3">
+                <div class="flex items-center gap-3">
+                  <img :src="item.product.image" :alt="item.product.name"
+                    class="w-10 h-10 rounded-lg object-cover bg-gray-100 hidden sm:block flex-shrink-0"
+                    @error="e=>e.target.src='https://picsum.photos/seed/'+item.product.id+'/100/100'" />
+                  <div>
+                    <p class="font-semibold text-[#0D1B2A]">{{item.product.name}}</p>
+                    <p class="text-xs text-gray-400 capitalize">{{item.product.category}}</p>
+                  </div>
+                </div>
+              </td>
+              <td class="px-3 py-3 text-center text-gray-500 hidden sm:table-cell">€{{item.product.dailyRate}}/day</td>
+              <td class="px-3 py-3 text-center text-gray-700 font-medium">{{fmtDuration(item.durationDays)}}</td>
+              <td class="px-3 py-3 text-center text-gray-700 hidden sm:table-cell">{{item.quantity}}×</td>
+              <td class="px-6 py-3 text-right font-bold text-[#FF6600]">€{{lineTotal(item).toFixed(2)}}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Totals block -->
+      <div class="px-6 py-5 border-t border-gray-100">
+        <div class="max-w-xs ml-auto space-y-1.5">
+          <div class="flex justify-between text-sm text-gray-600">
+            <span>Subtotal (excl. VAT)</span><span>€{{cartTotal.toFixed(2)}}</span>
+          </div>
+          <div class="flex justify-between text-sm text-gray-600">
+            <span>VAT 21%</span><span>€{{(cartTotal*0.21).toFixed(2)}}</span>
+          </div>
+          <div class="border-t-2 border-[#FF6600] pt-2 mt-2 flex justify-between">
+            <span class="font-black text-[#0D1B2A] text-lg">TOTAL</span>
+            <span class="font-black text-[#FF6600] text-lg">€{{(cartTotal*1.21).toFixed(2)}}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- T&C -->
+      <div class="px-6 pb-6">
+        <div class="bg-gray-50 rounded-xl p-4 space-y-1 text-xs text-gray-400">
+          <p class="font-semibold text-gray-500 mb-1">Terms &amp; Conditions</p>
+          <p>• This quotation is valid for 30 days from the date above.</p>
+          <p>• Rental period begins upon collection and ends upon return to the depot.</p>
+          <p>• Equipment must be returned in the same condition as collected.</p>
+          <p>• Standard Boels rental conditions apply — available at all depots and on boels.com.</p>
+          <p>• A deposit may be required at time of collection.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="mt-6 flex flex-col sm:flex-row gap-3">
+      <button @click="downloadPDF" :disabled="downloading"
+        class="flex-1 flex items-center justify-center gap-3 bg-[#FF6600] hover:bg-[#CC5200] text-white font-bold py-4 rounded-xl text-base transition-all active:scale-95 disabled:opacity-60 disabled:cursor-not-allowed">
+        <span class="text-xl" :class="downloading?'animate-spin':''"
+          >{{downloading?'⟳':'📥'}}</span>
+        {{downloading ? 'Generating PDF…' : 'Download Quote as PDF'}}
+      </button>
+      <button @click="clearAndNew"
+        class="sm:w-auto px-6 py-4 border-2 border-gray-200 hover:border-[#FF6600] text-gray-600 hover:text-[#FF6600] font-semibold rounded-xl transition-all">
+        New Quote
+      </button>
+    </div>
+
+    <div v-if="pdfError" class="mt-4 bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+      <span class="text-red-500 text-xl flex-shrink-0">⚠️</span>
+      <div>
+        <p class="text-sm text-red-700 font-semibold">PDF Generation Failed</p>
+        <p class="text-xs text-red-600 mt-0.5">{{pdfError}}</p>
+        <button @click="downloadPDF" class="mt-2 text-xs text-red-600 underline hover:text-red-800">Retry</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ══════════════════════════ ACCOUNT VIEW ════════════════════════════ -->
+  <main v-show="view==='account'" class="max-w-5xl mx-auto px-4 py-6">
+
+    <!-- Not logged in guard -->
+    <div v-if="!customer" class="text-center py-24">
+      <div class="text-6xl mb-4">🔒</div>
+      <p class="text-xl font-semibold text-gray-600 mb-2">Sign in to view your account</p>
+      <button @click="loginOpen=true"
+        class="mt-4 bg-[#FF6600] text-white px-8 py-3 rounded-xl font-bold hover:bg-[#CC5200] transition-colors">
+        Sign In
+      </button>
+    </div>
+
+    <div v-if="customer">
+      <!-- Profile header card -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 mb-5 flex flex-col sm:flex-row sm:items-center gap-4">
+        <div class="w-14 h-14 bg-[#FF6600] rounded-full flex items-center justify-center text-white font-black text-2xl flex-shrink-0">
+          {{customer.name[0]}}
+        </div>
+        <div class="flex-1 min-w-0">
+          <h1 class="text-xl font-black text-[#0D1B2A] leading-tight">{{customer.name}}</h1>
+          <p class="text-sm text-gray-500">{{customer.company}}</p>
+          <p class="text-xs text-[#FF6600] font-semibold mt-0.5">{{customer.id}}</p>
+        </div>
+        <div class="flex gap-2 flex-shrink-0">
+          <button @click="setView('catalog')"
+            class="px-4 py-2 border border-gray-200 hover:border-[#FF6600] text-gray-600 hover:text-[#FF6600] text-sm font-medium rounded-xl transition-all">
+            ← Catalog
+          </button>
+          <button @click="customer=null; setView('catalog')"
+            class="px-4 py-2 bg-gray-100 hover:bg-red-50 hover:text-red-600 text-gray-600 text-sm font-medium rounded-xl transition-all">
+            Sign Out
+          </button>
+        </div>
+      </div>
+
+      <!-- KPI strip -->
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+        <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+          <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Active Rentals</p>
+          <p class="text-3xl font-black text-[#FF6600] mt-1">{{mockOrders.filter(o=>o.status==='active').length}}</p>
+        </div>
+        <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+          <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Open Invoices</p>
+          <p class="text-3xl font-black text-[#0D1B2A] mt-1">{{mockInvoices.filter(i=>i.status!=='paid').length}}</p>
+        </div>
+        <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+          <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Open Tickets</p>
+          <p class="text-3xl font-black text-[#0D1B2A] mt-1">{{mockTickets.filter(t=>t.status!=='resolved').length}}</p>
+        </div>
+        <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+          <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Spent (YTD)</p>
+          <p class="text-3xl font-black text-[#0D1B2A] mt-1">€{{ytdSpend}}</p>
+        </div>
+      </div>
+
+      <!-- Tabbed panel -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <!-- Tab bar -->
+        <div class="flex border-b border-gray-200 overflow-x-auto">
+          <button v-for="tab in accountTabs" :key="tab.id" @click="accountTab=tab.id"
+            :class="accountTab===tab.id
+              ? 'text-[#FF6600] border-b-2 border-[#FF6600] bg-orange-50/60'
+              : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'"
+            class="flex items-center gap-2 px-5 py-3.5 text-sm font-medium whitespace-nowrap transition-all flex-shrink-0">
+            <span>{{tab.emoji}}</span>
+            <span>{{tab.label}}</span>
+            <span v-if="tab.badge"
+              class="bg-[#FF6600] text-white text-xs px-1.5 py-0.5 rounded-full font-bold leading-none">
+              {{tab.badge}}
+            </span>
+          </button>
+        </div>
+
+        <div class="p-5">
+
+          <!-- ── DASHBOARD TAB ── -->
+          <div v-if="accountTab==='dashboard'" class="space-y-5">
+            <!-- Active rentals summary -->
+            <div>
+              <h3 class="text-sm font-bold text-[#0D1B2A] uppercase tracking-wide mb-3">Active Rentals</h3>
+              <div v-for="order in mockOrders.filter(o=>o.status==='active')" :key="order.id"
+                class="bg-orange-50 border border-orange-200 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div class="flex-1">
+                  <div class="flex items-center gap-2 mb-1">
+                    <span class="font-bold text-[#0D1B2A]">{{order.id}}</span>
+                    <span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-semibold">Active</span>
+                  </div>
+                  <p class="text-sm text-gray-600">{{order.items.map(i=>i.name).join(' · ')}}</p>
+                  <p class="text-xs text-gray-400 mt-0.5">Return by: <strong class="text-[#FF6600]">{{order.returnDate}}</strong> · {{order.depot}}</p>
+                </div>
+                <div class="text-right flex-shrink-0">
+                  <p class="font-black text-[#FF6600] text-lg">€{{order.total}}</p>
+                  <button @click="accountTab='tickets'; openNewTicket=true; ticketForm.orderId=order.id"
+                    class="text-xs text-[#FF6600] hover:underline mt-1 block">Report issue →</button>
+                </div>
+              </div>
+              <p v-if="!mockOrders.filter(o=>o.status==='active').length" class="text-sm text-gray-400 italic">No active rentals.</p>
+            </div>
+
+            <!-- Overdue invoices alert -->
+            <div v-if="mockInvoices.filter(i=>i.status==='overdue').length">
+              <div class="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+                <span class="text-red-500 text-xl flex-shrink-0">⚠️</span>
+                <div class="flex-1">
+                  <p class="font-semibold text-red-700 text-sm">Overdue Invoice</p>
+                  <p class="text-xs text-red-600 mt-0.5">
+                    You have {{mockInvoices.filter(i=>i.status==='overdue').length}} overdue invoice(s).
+                    Please settle to avoid service interruption.
+                  </p>
+                </div>
+                <button @click="accountTab='invoices'" class="text-xs text-red-600 underline flex-shrink-0">View →</button>
+              </div>
+            </div>
+
+            <!-- Recent activity -->
+            <div>
+              <h3 class="text-sm font-bold text-[#0D1B2A] uppercase tracking-wide mb-3">Recent Activity</h3>
+              <div class="space-y-2">
+                <div v-for="act in recentActivity" :key="act.id"
+                  class="flex items-center gap-3 py-2.5 border-b border-gray-100 last:border-0">
+                  <span class="text-xl flex-shrink-0">{{act.icon}}</span>
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm text-gray-700 font-medium">{{act.title}}</p>
+                    <p class="text-xs text-gray-400">{{act.sub}}</p>
+                  </div>
+                  <span class="text-xs text-gray-400 flex-shrink-0">{{act.date}}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Quick actions -->
+            <div>
+              <h3 class="text-sm font-bold text-[#0D1B2A] uppercase tracking-wide mb-3">Quick Actions</h3>
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <button @click="setView('catalog')"
+                  class="bg-[#FF6600] text-white rounded-xl p-3 text-sm font-semibold hover:bg-[#CC5200] transition-colors text-center">
+                  🛒 New Rental
+                </button>
+                <button @click="accountTab='tickets'; openNewTicket=true"
+                  class="bg-[#0D1B2A] text-white rounded-xl p-3 text-sm font-semibold hover:bg-[#1E3A5F] transition-colors text-center">
+                  🎫 New Ticket
+                </button>
+                <button @click="accountTab='invoices'"
+                  class="bg-white border-2 border-gray-200 hover:border-[#FF6600] text-gray-700 rounded-xl p-3 text-sm font-semibold transition-colors text-center">
+                  🧾 Invoices
+                </button>
+                <button @click="accountTab='claims'; openNewClaim=true"
+                  class="bg-white border-2 border-gray-200 hover:border-[#FF6600] text-gray-700 rounded-xl p-3 text-sm font-semibold transition-colors text-center">
+                  📋 New Claim
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── ORDERS TAB ── -->
+          <div v-if="accountTab==='orders'" class="space-y-3">
+            <div class="flex items-center justify-between mb-1">
+              <h3 class="text-sm font-bold text-[#0D1B2A] uppercase tracking-wide">Rental Orders</h3>
+              <button @click="setView('catalog')"
+                class="text-xs bg-[#FF6600] text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-[#CC5200] transition-colors">
+                + New Rental
+              </button>
+            </div>
+
+            <div v-for="order in mockOrders" :key="order.id"
+              class="border border-gray-100 rounded-xl overflow-hidden hover:shadow-sm transition-shadow">
+              <!-- Order header -->
+              <div class="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-100">
+                <div class="flex items-center gap-3">
+                  <span class="font-bold text-[#0D1B2A] text-sm">{{order.id}}</span>
+                  <span :class="{
+                    'bg-green-100 text-green-700': order.status==='active',
+                    'bg-blue-100 text-blue-700': order.status==='pending',
+                    'bg-gray-100 text-gray-500': order.status==='completed'
+                  }" class="text-xs px-2 py-0.5 rounded-full font-semibold capitalize">
+                    {{order.status==='active'?'🟢 Active':order.status==='pending'?'🔵 Pending':'✓ Completed'}}
+                  </span>
+                </div>
+                <div class="text-right text-xs text-gray-400">
+                  <p>{{order.date}} → {{order.returnDate}}</p>
+                  <p class="text-[#FF6600] font-semibold">{{order.depot.replace('Boels Depot ','')}}</p>
+                </div>
+              </div>
+              <!-- Order items -->
+              <div class="px-4 py-3 space-y-1.5">
+                <div v-for="item in order.items" :key="item.name"
+                  class="flex items-center justify-between text-sm">
+                  <span class="text-gray-700">{{item.name}} <span class="text-gray-400 text-xs">×{{item.qty}} · {{item.days}}d</span></span>
+                  <span class="font-semibold text-gray-700">€{{item.total}}</span>
+                </div>
+              </div>
+              <!-- Order footer -->
+              <div class="px-4 py-3 border-t border-gray-100 flex items-center justify-between bg-white">
+                <div class="flex gap-2">
+                  <button @click="reorderItems(order)"
+                    class="text-xs bg-gray-100 hover:bg-[#FF6600] hover:text-white text-gray-600 px-3 py-1.5 rounded-lg font-medium transition-colors">
+                    🔄 Reorder
+                  </button>
+                  <button v-if="order.status==='active'"
+                    @click="accountTab='tickets'; openNewTicket=true; ticketForm.orderId=order.id"
+                    class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1.5 rounded-lg font-medium transition-colors">
+                    🎫 Report Issue
+                  </button>
+                </div>
+                <div class="text-right">
+                  <span class="font-black text-[#0D1B2A]">€{{order.total}}</span>
+                  <span v-if="!order.paid" class="ml-2 text-xs text-orange-600 font-semibold">Unpaid</span>
+                  <span v-else class="ml-2 text-xs text-green-600 font-semibold">✓ Paid</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── INVOICES TAB ── -->
+          <div v-if="accountTab==='invoices'" class="space-y-3">
+            <div class="flex items-center justify-between mb-1">
+              <h3 class="text-sm font-bold text-[#0D1B2A] uppercase tracking-wide">Invoices</h3>
+              <span class="text-xs text-gray-400">{{mockInvoices.length}} total</span>
+            </div>
+
+            <!-- Summary pills -->
+            <div class="flex gap-2 flex-wrap mb-2">
+              <span class="text-xs bg-red-50 text-red-600 border border-red-200 px-3 py-1 rounded-full font-semibold">
+                {{mockInvoices.filter(i=>i.status==='overdue').length}} Overdue
+              </span>
+              <span class="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 px-3 py-1 rounded-full font-semibold">
+                {{mockInvoices.filter(i=>i.status==='open').length}} Open
+              </span>
+              <span class="text-xs bg-green-50 text-green-700 border border-green-200 px-3 py-1 rounded-full font-semibold">
+                {{mockInvoices.filter(i=>i.status==='paid').length}} Paid
+              </span>
+            </div>
+
+            <div class="overflow-x-auto rounded-xl border border-gray-100">
+              <table class="w-full text-sm">
+                <thead>
+                  <tr class="bg-[#0D1B2A] text-white">
+                    <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide">Invoice</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide hidden sm:table-cell">Order</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wide hidden sm:table-cell">Due Date</th>
+                    <th class="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wide">Status</th>
+                    <th class="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wide">Amount</th>
+                    <th class="text-center px-4 py-3 text-xs font-semibold uppercase tracking-wide">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(inv,i) in mockInvoices" :key="inv.id"
+                    :class="i%2===1?'bg-gray-50':'bg-white'">
+                    <td class="px-4 py-3">
+                      <p class="font-semibold text-[#0D1B2A]">{{inv.id}}</p>
+                      <p class="text-xs text-gray-400">{{inv.date}}</p>
+                    </td>
+                    <td class="px-4 py-3 text-gray-500 text-xs hidden sm:table-cell">{{inv.orderId}}</td>
+                    <td class="px-4 py-3 text-xs hidden sm:table-cell"
+                      :class="inv.status==='overdue'?'text-red-600 font-semibold':'text-gray-500'">
+                      {{inv.dueDate}}
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                      <span :class="{
+                        'bg-red-100 text-red-700': inv.status==='overdue',
+                        'bg-yellow-100 text-yellow-700': inv.status==='open',
+                        'bg-green-100 text-green-700': inv.status==='paid'
+                      }" class="text-xs px-2.5 py-1 rounded-full font-semibold capitalize">
+                        {{inv.status==='overdue'?'⚠️ Overdue':inv.status==='open'?'📬 Open':'✓ Paid'}}
+                      </span>
+                    </td>
+                    <td class="px-4 py-3 text-right font-bold text-[#0D1B2A]">€{{inv.amount.toFixed(2)}}</td>
+                    <td class="px-4 py-3 text-center">
+                      <button @click="downloadInvoicePDF(inv)"
+                        class="text-xs bg-[#FF6600] text-white px-2.5 py-1 rounded-lg hover:bg-[#CC5200] transition-colors font-semibold">
+                        📥 PDF
+                      </button>
+                    </td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr class="bg-gray-50 border-t-2 border-gray-200">
+                    <td colspan="4" class="px-4 py-3 text-sm font-bold text-[#0D1B2A]">Outstanding Balance</td>
+                    <td class="px-4 py-3 text-right font-black text-[#FF6600]">
+                      €{{mockInvoices.filter(i=>i.status!=='paid').reduce((s,i)=>s+i.amount,0).toFixed(2)}}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          <!-- ── TICKETS TAB ── -->
+          <div v-if="accountTab==='tickets'" class="space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold text-[#0D1B2A] uppercase tracking-wide">Support Tickets</h3>
+              <button @click="openNewTicket=!openNewTicket"
+                :class="openNewTicket?'bg-gray-200 text-gray-700':'bg-[#FF6600] text-white hover:bg-[#CC5200]'"
+                class="text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors">
+                {{openNewTicket ? '✕ Cancel' : '+ New Ticket'}}
+              </button>
+            </div>
+
+            <!-- New ticket form -->
+            <div v-if="openNewTicket" class="bg-blue-50 border border-blue-200 rounded-xl p-5 space-y-4 fade-in">
+              <h4 class="font-bold text-[#0D1B2A]">Submit Support Ticket</h4>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">Category *</label>
+                  <select v-model="ticketForm.category"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600] bg-white">
+                    <option value="">Select category…</option>
+                    <option>Equipment Issue</option>
+                    <option>Billing Question</option>
+                    <option>Rental Extension</option>
+                    <option>Early Return</option>
+                    <option>Missing Accessories</option>
+                    <option>Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">Order Reference</label>
+                  <select v-model="ticketForm.orderId"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600] bg-white">
+                    <option value="">Not order-related</option>
+                    <option v-for="o in mockOrders" :key="o.id" :value="o.id">{{o.id}}</option>
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Subject *</label>
+                <input v-model="ticketForm.subject" type="text" placeholder="Brief description of your issue…"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600]" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Priority</label>
+                <div class="flex gap-2">
+                  <button v-for="p in ['Low','Medium','High']" :key="p" @click="ticketForm.priority=p"
+                    :class="{
+                      'bg-green-500 text-white border-green-500': ticketForm.priority===p && p==='Low',
+                      'bg-yellow-500 text-white border-yellow-500': ticketForm.priority===p && p==='Medium',
+                      'bg-red-500 text-white border-red-500': ticketForm.priority===p && p==='High',
+                      'bg-white text-gray-500 border-gray-300': ticketForm.priority!==p
+                    }"
+                    class="flex-1 py-1.5 text-xs font-semibold rounded-lg border transition-all">{{p}}</button>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Description *</label>
+                <textarea v-model="ticketForm.description" rows="3"
+                  placeholder="Please describe the issue in detail — include any error sounds, visible damage, or relevant context…"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600] resize-none"></textarea>
+              </div>
+              <div class="flex gap-3">
+                <button @click="submitTicket"
+                  :disabled="!ticketForm.subject || !ticketForm.category || !ticketForm.description"
+                  class="flex-1 bg-[#FF6600] text-white py-2.5 rounded-xl font-bold hover:bg-[#CC5200] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                  Submit Ticket
+                </button>
+              </div>
+              <div v-if="ticketSubmitted"
+                class="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2 text-green-700 text-sm font-semibold fade-in">
+                ✓ Ticket submitted! Reference: <strong>{{lastTicketId}}</strong>. We'll respond within 4 business hours.
+              </div>
+            </div>
+
+            <!-- Tickets list -->
+            <div class="space-y-3">
+              <div v-for="ticket in mockTickets" :key="ticket.id"
+                class="border rounded-xl p-4 hover:shadow-sm transition-shadow"
+                :class="ticket.status==='open'?'border-orange-200 bg-orange-50/30':ticket.status==='in_progress'?'border-blue-200 bg-blue-50/30':'border-gray-100'">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap mb-1">
+                      <span class="font-bold text-sm text-[#0D1B2A]">{{ticket.id}}</span>
+                      <span :class="{
+                        'bg-orange-100 text-orange-700': ticket.status==='open',
+                        'bg-blue-100 text-blue-700': ticket.status==='in_progress',
+                        'bg-green-100 text-green-700': ticket.status==='resolved'
+                      }" class="text-xs px-2 py-0.5 rounded-full font-semibold">
+                        {{ticket.status==='open'?'🔴 Open':ticket.status==='in_progress'?'🔵 In Progress':'✅ Resolved'}}
+                      </span>
+                      <span :class="{
+                        'text-red-600': ticket.priority==='high',
+                        'text-yellow-600': ticket.priority==='medium',
+                        'text-gray-400': ticket.priority==='low'
+                      }" class="text-xs font-semibold capitalize">{{ticket.priority}} priority</span>
+                    </div>
+                    <p class="text-sm font-medium text-gray-800">{{ticket.subject}}</p>
+                    <div class="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
+                      <span>📁 {{ticket.category}}</span>
+                      <span v-if="ticket.orderId">🔗 {{ticket.orderId}}</span>
+                      <span>💬 {{ticket.messages}} messages</span>
+                      <span>Updated {{ticket.lastUpdate}}</span>
+                    </div>
+                  </div>
+                  <button v-if="ticket.status!=='resolved'"
+                    class="flex-shrink-0 text-xs bg-white border border-gray-200 hover:border-[#FF6600] text-gray-600 hover:text-[#FF6600] px-3 py-1.5 rounded-lg transition-all font-medium">
+                    View →
+                  </button>
+                </div>
+              </div>
+              <p v-if="!mockTickets.length" class="text-sm text-gray-400 italic text-center py-6">No tickets yet.</p>
+            </div>
+          </div>
+
+          <!-- ── CLAIMS TAB ── -->
+          <div v-if="accountTab==='claims'" class="space-y-4">
+            <div class="flex items-center justify-between">
+              <h3 class="text-sm font-bold text-[#0D1B2A] uppercase tracking-wide">Damage &amp; Insurance Claims</h3>
+              <button @click="openNewClaim=!openNewClaim"
+                :class="openNewClaim?'bg-gray-200 text-gray-700':'bg-[#FF6600] text-white hover:bg-[#CC5200]'"
+                class="text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors">
+                {{openNewClaim ? '✕ Cancel' : '+ New Claim'}}
+              </button>
+            </div>
+
+            <!-- New claim form -->
+            <div v-if="openNewClaim" class="bg-red-50 border border-red-200 rounded-xl p-5 space-y-4 fade-in">
+              <h4 class="font-bold text-[#0D1B2A]">Submit Damage / Issue Claim</h4>
+              <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-800">
+                ⚠️ Claims must be submitted within 48 hours of equipment return. Keep evidence (photos) for your records.
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">Order Reference *</label>
+                  <select v-model="claimForm.orderId"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600] bg-white">
+                    <option value="">Select order…</option>
+                    <option v-for="o in mockOrders" :key="o.id" :value="o.id">{{o.id}}</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-gray-600 mb-1">Equipment *</label>
+                  <input v-model="claimForm.equipment" type="text" placeholder="e.g. Mini Excavator 1.5T"
+                    class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600]" />
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Claim Type *</label>
+                <div class="flex gap-2 flex-wrap">
+                  <button v-for="ct in ['Equipment Malfunction','Damage During Use','Theft/Loss','Missing Accessories','Injury Incident']"
+                    :key="ct" @click="claimForm.type=ct"
+                    :class="claimForm.type===ct?'bg-[#0D1B2A] text-white border-[#0D1B2A]':'bg-white text-gray-500 border-gray-200 hover:border-gray-400'"
+                    class="text-xs px-3 py-1.5 border rounded-full font-medium transition-all">{{ct}}</button>
+                </div>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Incident Date *</label>
+                <input v-model="claimForm.incidentDate" type="date"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600]" />
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Description *</label>
+                <textarea v-model="claimForm.description" rows="3"
+                  placeholder="Describe what happened in detail — include when, where, and how the issue occurred…"
+                  class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600] resize-none"></textarea>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-gray-600 mb-1">Photo Evidence</label>
+                <div class="border-2 border-dashed border-gray-300 rounded-xl p-4 text-center text-gray-400 text-sm hover:border-[#FF6600] transition-colors cursor-pointer">
+                  📷 Click to attach photos (demo — file upload simulated)
+                </div>
+              </div>
+              <button @click="submitClaim"
+                :disabled="!claimForm.orderId || !claimForm.equipment || !claimForm.description || !claimForm.incidentDate"
+                class="w-full bg-[#FF6600] text-white py-2.5 rounded-xl font-bold hover:bg-[#CC5200] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+                Submit Claim
+              </button>
+              <div v-if="claimSubmitted"
+                class="bg-green-50 border border-green-200 rounded-xl p-3 flex items-center gap-2 text-green-700 text-sm font-semibold fade-in">
+                ✓ Claim submitted! Reference: <strong>{{lastClaimId}}</strong>. Our team will contact you within 1 business day.
+              </div>
+            </div>
+
+            <!-- Claims list -->
+            <div class="space-y-3">
+              <div v-for="claim in mockClaims" :key="claim.id"
+                class="border rounded-xl p-4"
+                :class="claim.status==='under_review'?'border-yellow-200 bg-yellow-50/30':'border-gray-100'">
+                <div class="flex items-start justify-between gap-3">
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap mb-1">
+                      <span class="font-bold text-sm text-[#0D1B2A]">{{claim.id}}</span>
+                      <span :class="claim.status==='under_review'?'bg-yellow-100 text-yellow-700':'bg-green-100 text-green-700'"
+                        class="text-xs px-2 py-0.5 rounded-full font-semibold">
+                        {{claim.status==='under_review'?'🔍 Under Review':'✅ Resolved'}}
+                      </span>
+                    </div>
+                    <p class="text-sm font-medium text-gray-800">{{claim.equipment}}</p>
+                    <p class="text-xs text-gray-500 mt-1 line-clamp-2">{{claim.description}}</p>
+                    <div class="flex items-center gap-3 mt-1.5 text-xs text-gray-400">
+                      <span>🔗 {{claim.orderId}}</span>
+                      <span>📅 {{claim.date}}</span>
+                      <span v-if="claim.amount>0" class="text-orange-600 font-semibold">Disputed: €{{claim.amount}}</span>
+                    </div>
+                    <div v-if="claim.resolution"
+                      class="mt-2 bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-xs text-green-700">
+                      ✅ Resolution: {{claim.resolution}}
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <p v-if="!mockClaims.length" class="text-sm text-gray-400 italic text-center py-6">No claims on file.</p>
+            </div>
+          </div>
+
+        </div><!-- end tab content -->
+      </div><!-- end tabbed panel -->
+    </div><!-- end customer guard -->
+  </main>
+
+  <!-- ═══════════════════════════ CART DRAWER ═══ -->
+  <div v-if="cartOpen" @click.self="cartOpen=false"
+    class="fixed inset-0 bg-black/40 z-40"></div>
+  <div v-if="cartOpen"
+    class="slide-right fixed top-0 right-0 bottom-0 w-full max-w-md bg-white shadow-2xl z-50 flex flex-col">
+    <div class="bg-[#0D1B2A] text-white px-5 py-4 flex items-center justify-between">
+      <div>
+        <h2 class="font-bold text-lg">Rental Cart</h2>
+        <p class="text-xs text-gray-400">{{cart.length}} item{{cart.length!==1?'s':''}}</p>
+      </div>
+      <button @click="cartOpen=false" class="text-gray-300 hover:text-white text-2xl w-8 h-8 flex items-center justify-center transition-colors">✕</button>
+    </div>
+
+    <div class="flex-1 overflow-y-auto p-4 space-y-3">
+      <div v-if="cart.length===0" class="text-center py-16 text-gray-400">
+        <div class="text-5xl mb-3">🛒</div>
+        <p class="font-medium text-gray-500">Your cart is empty</p>
+        <p class="text-sm mt-1">Browse and add rental items</p>
+      </div>
+
+      <div v-for="item in cart" :key="item.product.id"
+        class="bg-gray-50 rounded-xl p-3 border border-gray-100">
+        <div class="flex gap-3">
+          <img :src="item.product.image" :alt="item.product.name"
+            class="w-16 h-16 object-cover rounded-lg bg-gray-200 flex-shrink-0"
+            @error="e=>e.target.src='https://picsum.photos/seed/'+item.product.id+'/200/200'" />
+          <div class="flex-1 min-w-0">
+            <h4 class="font-semibold text-sm text-[#0D1B2A] leading-tight">{{item.product.name}}</h4>
+            <p class="text-xs text-gray-400 mt-0.5">€{{item.product.dailyRate}}/day · €{{item.product.weeklyRate}}/week</p>
+            <p class="text-sm font-bold text-[#FF6600] mt-1">€{{lineTotal(item).toFixed(2)}}</p>
+          </div>
+          <button @click="removeFromCart(item.product.id)"
+            class="text-gray-300 hover:text-red-500 transition-colors text-lg self-start leading-none">✕</button>
+        </div>
+        <div class="mt-3">
+          <label class="text-xs text-gray-500 font-medium">Rental Duration</label>
+          <div class="flex items-center gap-2 mt-1.5">
+            <button @click="updateDuration(item.product.id, Math.max(1,item.durationDays-1))"
+              class="w-8 h-8 rounded-lg bg-gray-200 hover:bg-gray-300 font-bold text-sm flex items-center justify-center transition-colors">−</button>
+            <div class="flex-1 text-center bg-white border border-gray-200 rounded-lg py-1.5">
+              <span class="text-sm font-bold text-[#0D1B2A]">{{item.durationDays}}</span>
+              <span class="text-xs text-gray-400 ml-1">day{{item.durationDays!==1?'s':''}}</span>
+            </div>
+            <button @click="updateDuration(item.product.id, item.durationDays+1)"
+              class="w-8 h-8 rounded-lg bg-gray-200 hover:bg-gray-300 font-bold text-sm flex items-center justify-center transition-colors">+</button>
+          </div>
+          <p v-if="item.durationDays>=7" class="text-xs text-green-600 mt-1">
+            ✓ Weekly rate applied — saves {{Math.round(((item.product.dailyRate*7-item.product.weeklyRate)/(item.product.dailyRate*7))*100)}}%
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="cart.length>0" class="border-t border-gray-200 p-4 space-y-3 bg-white">
+      <div class="flex justify-between items-center">
+        <span class="text-gray-600 font-medium">Subtotal (excl. VAT)</span>
+        <span class="text-xl font-black text-[#0D1B2A]">€{{cartTotal.toFixed(2)}}</span>
+      </div>
+      <button @click="createQuote"
+        class="w-full bg-[#FF6600] hover:bg-[#CC5200] text-white font-bold py-3.5 rounded-xl text-base transition-colors active:scale-95">
+        Create Quote →
+      </button>
+      <button @click="cart=[]" class="w-full text-xs text-gray-400 hover:text-red-500 transition-colors py-1">
+        Clear cart
+      </button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════ AI ASSISTANT PANEL ══════════════════════ -->
+  <div v-if="aiOpen" @click.self="aiOpen=false"
+    class="fixed inset-0 bg-black/20 z-40"></div>
+  <div v-if="aiOpen"
+    class="slide-right fixed bottom-0 right-0 top-16 w-full max-w-sm bg-white shadow-2xl z-50 flex flex-col border-l border-gray-200">
+    <div class="bg-[#0D1B2A] text-white px-4 py-3 flex items-center gap-3">
+      <div class="w-9 h-9 bg-[#FF6600] rounded-full flex items-center justify-center text-lg flex-shrink-0">🤖</div>
+      <div class="flex-1 min-w-0">
+        <p class="font-bold text-sm">Boels AI Assistant</p>
+        <p class="text-xs text-green-400 flex items-center gap-1">
+          <span class="w-1.5 h-1.5 bg-green-400 rounded-full pulse-dot inline-block"></span>
+          Online · No API needed
+        </p>
+      </div>
+      <button @click="aiOpen=false" class="text-gray-300 hover:text-white text-xl transition-colors">✕</button>
+    </div>
+
+    <div ref="aiScroll" class="flex-1 overflow-y-auto p-4 space-y-3">
+      <div v-for="msg in aiMessages" :key="msg.id"
+        class="flex" :class="msg.role==='user'?'justify-end':'justify-start'">
+        <div :class="msg.role==='user'
+            ? 'bg-[#FF6600] text-white rounded-br-sm'
+            : 'bg-gray-100 text-gray-800 rounded-bl-sm'"
+          class="max-w-[90%] rounded-2xl px-4 py-3 text-xs leading-relaxed">
+          <div v-html="fmtAI(msg.content)"></div>
+          <div v-if="msg.products && msg.products.length" class="mt-3 space-y-2">
+            <div v-for="p in msg.products.slice(0,4)" :key="p.id"
+              class="bg-white rounded-lg p-2 flex items-center gap-2 border border-gray-200 shadow-sm">
+              <img :src="p.image" :alt="p.name"
+                class="w-10 h-10 object-cover rounded-lg flex-shrink-0 bg-gray-100"
+                @error="e=>e.target.src='https://picsum.photos/seed/'+p.id+'/100/100'" />
+              <div class="flex-1 min-w-0">
+                <p class="text-xs font-semibold text-[#0D1B2A] truncate">{{p.name}}</p>
+                <p class="text-xs text-gray-500">€{{p.dailyRate}}/day</p>
+              </div>
+              <button @click="addToCart(p)" :disabled="isInCart(p.id)"
+                :class="isInCart(p.id)
+                  ? 'bg-green-100 text-green-700 cursor-default'
+                  : 'bg-[#FF6600] text-white hover:bg-[#CC5200]'"
+                class="text-xs px-2 py-1 rounded-lg font-semibold transition-colors flex-shrink-0">
+                {{isInCart(p.id)?'✓':'+ Cart'}}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick prompts -->
+    <div v-if="aiMessages.length<=1" class="px-3 pb-2">
+      <p class="text-xs text-gray-400 mb-1.5 font-medium">Try asking:</p>
+      <div class="flex flex-wrap gap-1.5">
+        <button v-for="q in quickPrompts" :key="q" @click="sendAI(q)"
+          class="text-xs bg-gray-100 hover:bg-[#FF6600] hover:text-white text-gray-600 px-2.5 py-1.5 rounded-full transition-all">
+          {{q}}
+        </button>
+      </div>
+    </div>
+
+    <div class="border-t border-gray-200 p-3 flex gap-2 bg-white">
+      <input v-model="aiInput" @keydown.enter="sendAI()" type="text"
+        placeholder="Describe your project…"
+        class="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600]" />
+      <button @click="startVoice"
+        :class="isListening?'bg-red-500 text-white animate-pulse':'bg-gray-100 hover:bg-gray-200 text-gray-600'"
+        class="w-9 h-9 rounded-xl flex items-center justify-center transition-all text-base" title="Voice input">🎤</button>
+      <button @click="sendAI()" :disabled="!aiInput.trim()"
+        class="w-9 h-9 rounded-xl bg-[#FF6600] text-white flex items-center justify-center hover:bg-[#CC5200] disabled:opacity-40 disabled:cursor-not-allowed transition-all">
+        ➤
+      </button>
+    </div>
+  </div>
+
+  <!-- ════════════════════════ LOGIN MODAL ══════════════════════════ -->
+  <div v-if="loginOpen" class="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden fade-in">
+      <div class="bg-[#0D1B2A] text-white px-6 py-4 flex items-center justify-between">
+        <div>
+          <h2 class="font-bold text-lg">Sign In</h2>
+          <p class="text-xs text-gray-400">Access account, pricing &amp; history</p>
+        </div>
+        <button @click="loginOpen=false" class="text-gray-300 hover:text-white text-xl transition-colors">✕</button>
+      </div>
+
+      <div class="flex border-b border-gray-200">
+        <button v-for="t in [{id:'demo',label:'👥 Demo'},{id:'qr',label:'📱 QR Code'},{id:'email',label:'✉️ Email'}]"
+          :key="t.id" @click="loginTab=t.id"
+          :class="loginTab===t.id?'text-[#FF6600] border-b-2 border-[#FF6600]':'text-gray-500 hover:text-gray-700'"
+          class="flex-1 py-3 text-sm font-medium transition-colors">{{t.label}}</button>
+      </div>
+
+      <div class="p-6">
+        <!-- Demo tab -->
+        <div v-if="loginTab==='demo'" class="space-y-3">
+          <p class="text-sm text-gray-500 mb-4">Select a demo account to continue:</p>
+          <button v-for="c in demoCustomers" :key="c.id" @click="loginAs(c)"
+            class="w-full text-left p-4 rounded-xl border-2 border-gray-100 hover:border-[#FF6600] hover:bg-orange-50 transition-all group">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 bg-orange-100 group-hover:bg-[#FF6600] group-hover:text-white rounded-full flex items-center justify-center text-lg transition-colors">
+                {{c.type==='Cash'?'💵':'🏢'}}
+              </div>
+              <div class="flex-1">
+                <p class="font-semibold text-sm text-[#0D1B2A]">{{c.name}}</p>
+                <p class="text-xs text-gray-500">{{c.company}}</p>
+                <p class="text-xs text-[#FF6600] font-semibold">{{c.id}}</p>
+              </div>
+              <span class="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">{{c.type}}</span>
+            </div>
+          </button>
+        </div>
+
+        <!-- QR tab -->
+        <div v-if="loginTab==='qr'" class="text-center space-y-4">
+          <p class="text-sm text-gray-500">Scan with the Boels app on your mobile device</p>
+          <div class="w-48 h-48 mx-auto border-4 border-[#0D1B2A] rounded-2xl p-3 bg-white shadow-inner">
+            <svg viewBox="0 0 100 100" class="w-full h-full">
+              <rect width="100" height="100" fill="white"/>
+              <rect x="0" y="0" width="34" height="34" rx="3" fill="#0D1B2A"/>
+              <rect x="5" y="5" width="24" height="24" rx="2" fill="white"/>
+              <rect x="10" y="10" width="14" height="14" rx="1" fill="#0D1B2A"/>
+              <rect x="66" y="0" width="34" height="34" rx="3" fill="#0D1B2A"/>
+              <rect x="71" y="5" width="24" height="24" rx="2" fill="white"/>
+              <rect x="76" y="10" width="14" height="14" rx="1" fill="#0D1B2A"/>
+              <rect x="0" y="66" width="34" height="34" rx="3" fill="#0D1B2A"/>
+              <rect x="5" y="71" width="24" height="24" rx="2" fill="white"/>
+              <rect x="10" y="76" width="14" height="14" rx="1" fill="#0D1B2A"/>
+              <rect x="38" y="2" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="46" y="2" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="54" y="2" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="38" y="10" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="54" y="10" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="46" y="18" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="38" y="26" width="14" height="6" fill="#0D1B2A"/>
+              <rect x="2" y="38" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="10" y="38" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="26" y="38" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="2" y="46" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="18" y="46" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="2" y="54" width="14" height="6" fill="#0D1B2A"/>
+              <rect x="26" y="54" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="38" y="38" width="62" height="6" fill="#0D1B2A"/>
+              <rect x="38" y="48" width="6" height="14" fill="#0D1B2A"/>
+              <rect x="48" y="48" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="58" y="48" width="14" height="6" fill="#0D1B2A"/>
+              <rect x="78" y="48" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="90" y="48" width="8" height="6" fill="#0D1B2A"/>
+              <rect x="48" y="58" width="14" height="6" fill="#0D1B2A"/>
+              <rect x="68" y="58" width="6" height="14" fill="#0D1B2A"/>
+              <rect x="82" y="58" width="16" height="6" fill="#0D1B2A"/>
+              <rect x="48" y="68" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="60" y="68" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="78" y="68" width="20" height="6" fill="#0D1B2A"/>
+              <rect x="38" y="78" width="26" height="6" fill="#0D1B2A"/>
+              <rect x="70" y="78" width="6" height="6" fill="#0D1B2A"/>
+              <rect x="84" y="78" width="14" height="6" fill="#0D1B2A"/>
+              <rect x="38" y="88" width="6" height="10" fill="#0D1B2A"/>
+              <rect x="50" y="88" width="14" height="6" fill="#0D1B2A"/>
+              <rect x="72" y="88" width="6" height="10" fill="#0D1B2A"/>
+              <rect x="84" y="92" width="14" height="6" fill="#0D1B2A"/>
+            </svg>
+          </div>
+          <p class="text-xs text-gray-400">Demo QR — tap button to simulate scan</p>
+          <button v-if="!qrScanning" @click="simulateQR"
+            class="bg-[#FF6600] text-white px-6 py-2.5 rounded-xl font-semibold text-sm hover:bg-[#CC5200] transition-colors">
+            Simulate QR Scan
+          </button>
+          <div v-else class="flex items-center justify-center gap-2 text-green-600 font-semibold text-sm">
+            <span class="inline-block animate-spin">⟳</span> Authenticating…
+          </div>
+        </div>
+
+        <!-- Email tab -->
+        <div v-if="loginTab==='email'">
+          <form @submit.prevent="loginAs(demoCustomers[0])" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Email address</label>
+              <input type="email" placeholder="jan@devriesaannemers.nl" required
+                class="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600] transition-all" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Password</label>
+              <input type="password" placeholder="••••••••" required
+                class="w-full border border-gray-300 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600] transition-all" />
+            </div>
+            <button type="submit"
+              class="w-full bg-[#FF6600] text-white py-3 rounded-xl font-bold hover:bg-[#CC5200] transition-colors">
+              Sign In
+            </button>
+            <p class="text-xs text-center text-gray-400">Demo: any email + password will log you in</p>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end #app -->
+
+<script>
+// ═══════════════════════════ PRODUCT DATA ═══════════════════════════════
+const CATEGORIES = [
+  {id:'all',label:'All Equipment',emoji:'🏗️'},
+  {id:'earthmoving',label:'Earthmoving',emoji:'🚜'},
+  {id:'concrete',label:'Concrete & Mixing',emoji:'🪣'},
+  {id:'drilling',label:'Drilling & Breaking',emoji:'⚒️'},
+  {id:'access',label:'Access & Lifting',emoji:'📐'},
+  {id:'surface',label:'Surface Prep',emoji:'🪚'},
+  {id:'power',label:'Power & Air',emoji:'⚡'},
+  {id:'cleaning',label:'Cleaning',emoji:'🚿'},
+  {id:'measuring',label:'Measuring',emoji:'📏'},
+];
+
+const PRODUCTS = [
+  {
+    id:'mini-excavator',name:'Mini Excavator 1.5T',category:'earthmoving',
+    description:'Compact tracked excavator for foundation work, trenching, and landscaping in tight spaces.',
+    image:'https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=600&auto=format&fit=crop&q=80',
+    dailyRate:185,weeklyRate:650,popular:true,
+    specs:[{label:'Weight',value:'1,500 kg'},{label:'Dig Depth',value:'2,400 mm'},{label:'Engine',value:'Kubota 13.5HP'},{label:'Bucket Width',value:'400 mm'}],
+    tags:['dig','excavate','trench','foundation','landscape','graven']
+  },
+  {
+    id:'plate-compactor',name:'Plate Compactor 80kg',category:'earthmoving',
+    description:'Petrol-powered plate compactor for compacting soil, gravel, and asphalt on construction sites.',
+    image:'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&auto=format&fit=crop&q=80',
+    dailyRate:55,weeklyRate:195,popular:true,
+    specs:[{label:'Plate Size',value:'480×650 mm'},{label:'Engine',value:'Honda 4.0HP'},{label:'Force',value:'15 kN'},{label:'Weight',value:'80 kg'}],
+    tags:['compact','compaction','soil','gravel','asphalt','foundation']
+  },
+  {
+    id:'roller-compactor',name:'Vibratory Roller 600kg',category:'earthmoving',
+    description:'Single drum vibratory roller for compacting asphalt, crushed stone, and granular fill material.',
+    image:'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&auto=format&fit=crop&q=80',
+    dailyRate:145,weeklyRate:510,
+    specs:[{label:'Weight',value:'600 kg'},{label:'Drum Width',value:'650 mm'},{label:'Engine',value:'Yanmar Diesel'},{label:'Force',value:'32 kN'}],
+    tags:['compact','asphalt','road','roller','paving']
+  },
+  {
+    id:'concrete-mixer',name:'Concrete Mixer 160L',category:'concrete',
+    description:'Electric drum mixer for on-site concrete, mortar, and screed mixing. Tilting drum for easy pouring.',
+    image:'https://images.unsplash.com/photo-1589939705384-5185137a7f0f?w=600&auto=format&fit=crop&q=80',
+    dailyRate:45,weeklyRate:160,popular:true,
+    specs:[{label:'Drum Capacity',value:'160 L'},{label:'Motor',value:'750W Electric'},{label:'Output',value:'100 L/mix'},{label:'Weight',value:'65 kg'}],
+    tags:['concrete','mix','mortar','cement','pour','beton']
+  },
+  {
+    id:'concrete-vibrator',name:'Concrete Vibrator Electric',category:'concrete',
+    description:'Electric internal vibrator for consolidating fresh concrete pours and eliminating air pockets.',
+    image:'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&auto=format&fit=crop&q=80',
+    dailyRate:22,weeklyRate:75,
+    specs:[{label:'Needle Ø',value:'38 mm'},{label:'Motor',value:'1,500W'},{label:'Frequency',value:'12,000 vpm'},{label:'Hose',value:'3 m'}],
+    tags:['concrete','vibrate','pour','cast','foundation']
+  },
+  {
+    id:'jackhammer',name:'Demolition Hammer 11kg',category:'drilling',
+    description:'Heavy-duty electric breaker for demolishing concrete floors, breaking walls, and road works.',
+    image:'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&auto=format&fit=crop&q=80',
+    dailyRate:35,weeklyRate:125,popular:true,
+    specs:[{label:'Impact Energy',value:'45 J'},{label:'Power',value:'1,500W'},{label:'Weight',value:'11 kg'},{label:'BPM',value:'900–1,200'}],
+    tags:['break','demolish','concrete','floor','wall','sloop']
+  },
+  {
+    id:'core-drill',name:'Core Drill Machine 2.5kW',category:'drilling',
+    description:'Water-cooled diamond core drilling machine for precise holes in concrete, brick, and masonry.',
+    image:'https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?w=600&auto=format&fit=crop&q=80',
+    dailyRate:65,weeklyRate:220,
+    specs:[{label:'Motor',value:'2,500W'},{label:'Max Ø',value:'300 mm'},{label:'Stand',value:'Included'},{label:'Cooling',value:'Water'}],
+    tags:['drill','bore','hole','concrete','pipe','kernboor']
+  },
+  {
+    id:'rotary-hammer',name:'SDS-Max Rotary Hammer 1.7kW',category:'drilling',
+    description:'Professional SDS-Max hammer drill for heavy drilling and chiseling in concrete and masonry.',
+    image:'https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?w=600&auto=format&fit=crop&q=80',
+    dailyRate:22,weeklyRate:78,popular:true,
+    specs:[{label:'Impact Energy',value:'8.5 J'},{label:'Power',value:'1,740W'},{label:'Max Ø',value:'40 mm'},{label:'Modes',value:'Drill/Hammer/Chisel'}],
+    tags:['drill','hammer','sds','concrete','wall','anchor']
+  },
+  {
+    id:'angle-grinder',name:'Angle Grinder 230mm 2.4kW',category:'drilling',
+    description:'Heavy-duty angle grinder for cutting, grinding, and polishing metal, stone, and concrete.',
+    image:'https://images.unsplash.com/photo-1600880292089-90a7e086ee0c?w=600&auto=format&fit=crop&q=80',
+    dailyRate:18,weeklyRate:62,
+    specs:[{label:'Disc Ø',value:'230 mm'},{label:'Power',value:'2,400W'},{label:'Speed',value:'6,500 rpm'},{label:'Weight',value:'5.2 kg'}],
+    tags:['cut','grind','metal','stone','concrete','saw']
+  },
+  {
+    id:'concrete-saw',name:'Floor Saw 4kW',category:'drilling',
+    description:'Walk-behind petrol concrete saw for cutting expansion joints, road repairs, and concrete slabs.',
+    image:'https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=600&auto=format&fit=crop&q=80',
+    dailyRate:78,weeklyRate:265,
+    specs:[{label:'Blade Ø',value:'350 mm'},{label:'Cut Depth',value:'125 mm'},{label:'Engine',value:'Honda 5.5HP'},{label:'Cooling',value:'Water'}],
+    tags:['cut','saw','concrete','joint','road','slab']
+  },
+  {
+    id:'scaffolding-4m',name:'Aluminium Scaffold Tower 4m',category:'access',
+    description:'Mobile aluminium scaffolding tower with outriggers for safe working at heights up to 4 meters.',
+    image:'https://images.unsplash.com/photo-1590845947698-8924d7409b56?w=600&auto=format&fit=crop&q=80',
+    dailyRate:35,weeklyRate:120,popular:true,
+    specs:[{label:'Working Height',value:'4.0 m'},{label:'Platform',value:'1.35×1.8 m'},{label:'Max Load',value:'200 kg'},{label:'Material',value:'Aluminium'}],
+    tags:['scaffold','height','paint','ceiling','access','stelling']
+  },
+  {
+    id:'scissor-lift',name:'Electric Scissor Lift 6m',category:'access',
+    description:'Indoor electric scissor lift. Low noise, zero emissions — ideal for indoor installations.',
+    image:'https://images.unsplash.com/photo-1565193566173-7a0ee3dbe261?w=600&auto=format&fit=crop&q=80',
+    dailyRate:125,weeklyRate:440,
+    specs:[{label:'Platform Height',value:'6.0 m'},{label:'Platform Size',value:'1.16×2.26 m'},{label:'Capacity',value:'230 kg'},{label:'Drive',value:'Electric'}],
+    tags:['lift','height','indoor','installation','ceiling','hoogwerker']
+  },
+  {
+    id:'floor-sander',name:'Floor Sander Belt 250mm',category:'surface',
+    description:'Professional belt floor sander for sanding and stripping hardwood floors, parquet, and timber.',
+    image:'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&auto=format&fit=crop&q=80',
+    dailyRate:55,weeklyRate:185,popular:true,
+    specs:[{label:'Belt Width',value:'250 mm'},{label:'Power',value:'2,200W'},{label:'Belt Speed',value:'350 m/min'},{label:'Dust Bag',value:'Included'}],
+    tags:['floor','sand','wood','parquet','strip','vloer']
+  },
+  {
+    id:'tile-cutter',name:'Electric Tile Saw 1.4kW',category:'surface',
+    description:'Wet tile saw for precise cutting of ceramic, porcelain, and natural stone tiles.',
+    image:'https://images.unsplash.com/photo-1504307651254-35680f356dfd?w=600&auto=format&fit=crop&q=80',
+    dailyRate:30,weeklyRate:100,
+    specs:[{label:'Blade Ø',value:'200 mm'},{label:'Max Cut',value:'610 mm'},{label:'Power',value:'1,400W'},{label:'Method',value:'Wet diamond'}],
+    tags:['tile','cut','ceramic','bathroom','floor','tegel']
+  },
+  {
+    id:'paint-sprayer',name:'Airless Paint Sprayer 3L/min',category:'surface',
+    description:'Professional airless sprayer for walls, ceilings, and large surface coating applications.',
+    image:'https://images.unsplash.com/photo-1600880292089-90a7e086ee0c?w=600&auto=format&fit=crop&q=80',
+    dailyRate:42,weeklyRate:145,
+    specs:[{label:'Flow Rate',value:'3 L/min'},{label:'Max Pressure',value:'210 bar'},{label:'Power',value:'1,400W'},{label:'Hose',value:'15 m'}],
+    tags:['paint','spray','coat','wall','ceiling','schilder']
+  },
+  {
+    id:'dust-extractor',name:'Industrial Dust Extractor 1.4kW',category:'surface',
+    description:'M-class dust extractor capturing hazardous dust from drilling, grinding, and sanding operations.',
+    image:'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&auto=format&fit=crop&q=80',
+    dailyRate:20,weeklyRate:68,
+    specs:[{label:'Airflow',value:'3,900 L/min'},{label:'Suction',value:'250 mbar'},{label:'Container',value:'20 L'},{label:'Class',value:'M-class'}],
+    tags:['dust','vacuum','safety','drilling','grinding']
+  },
+  {
+    id:'generator-5kva',name:'Petrol Generator 5kVA',category:'power',
+    description:'Portable generator for remote sites without mains power. Powers tools, lighting, and small machines.',
+    image:'https://images.unsplash.com/photo-1581092335397-9fa73b3e67e7?w=600&auto=format&fit=crop&q=80',
+    dailyRate:45,weeklyRate:155,popular:true,
+    specs:[{label:'Output',value:'5 kVA / 4 kW'},{label:'Engine',value:'Honda 4-stroke'},{label:'Tank',value:'12 L'},{label:'Sockets',value:'2×230V + 400V'}],
+    tags:['generator','power','electricity','site','outdoor','aggregaat']
+  },
+  {
+    id:'air-compressor',name:'Air Compressor 50L 2.2kW',category:'power',
+    description:'Belt-driven air compressor for pneumatic tools, spray guns, nailers, and tyre inflation.',
+    image:'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&auto=format&fit=crop&q=80',
+    dailyRate:30,weeklyRate:100,
+    specs:[{label:'Tank',value:'50 L'},{label:'Motor',value:'2,200W'},{label:'Max Pressure',value:'10 bar'},{label:'Flow',value:'210 L/min'}],
+    tags:['compressor','air','pneumatic','spray','nail']
+  },
+  {
+    id:'pressure-washer',name:'Pressure Washer 200 bar',category:'cleaning',
+    description:'High-pressure cold water cleaner for removing dirt, algae, moss, and graffiti from surfaces.',
+    image:'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&auto=format&fit=crop&q=80',
+    dailyRate:38,weeklyRate:128,popular:true,
+    specs:[{label:'Pressure',value:'200 bar'},{label:'Flow Rate',value:'15 L/min'},{label:'Motor',value:'3,000W'},{label:'Hose',value:'10 m'}],
+    tags:['clean','pressure','wash','algae','graffiti','hogedruk']
+  },
+  {
+    id:'laser-level',name:'Rotating Laser Level Kit',category:'measuring',
+    description:'Self-leveling rotating laser with detector and tripod for precision leveling across large areas.',
+    image:'https://images.unsplash.com/photo-1504328345606-18bbc8c9d7d1?w=600&auto=format&fit=crop&q=80',
+    dailyRate:28,weeklyRate:95,popular:true,
+    specs:[{label:'Range',value:'300 m diameter'},{label:'Accuracy',value:'±1mm/10m'},{label:'Self-Level',value:'±5°'},{label:'Battery',value:'20 hrs'}],
+    tags:['level','measure','align','survey','floor','laser','waterpas']
+  }
+];
+
+// ════════════════════════════ MOCK ACCOUNT DATA ═══════════════════════
+const MOCK_ORDERS = [
+  { id:'ORD-2025-8821', date:'2025-04-22', returnDate:'2025-04-29', status:'active', depot:'Boels Depot Amsterdam-Noord',
+    items:[{name:'Mini Excavator 1.5T',qty:1,days:7,total:650},{name:'Plate Compactor 80kg',qty:1,days:7,total:195}],
+    total:845, paid:false },
+  { id:'ORD-2025-9102', date:'2025-04-30', returnDate:'2025-05-02', status:'pending', depot:'Boels Depot Amsterdam-Noord',
+    items:[{name:'Pressure Washer 200 bar',qty:1,days:2,total:76}], total:76, paid:false },
+  { id:'ORD-2025-7654', date:'2025-04-08', returnDate:'2025-04-12', status:'completed', depot:'Boels Depot Rotterdam-Zuid',
+    items:[{name:'Floor Sander Belt 250mm',qty:1,days:4,total:220},{name:'Industrial Dust Extractor',qty:1,days:4,total:80}],
+    total:300, paid:true },
+  { id:'ORD-2025-6543', date:'2025-03-10', returnDate:'2025-03-17', status:'completed', depot:'Boels Depot Utrecht-Centrum',
+    items:[{name:'Concrete Mixer 160L',qty:1,days:7,total:160},{name:'Rotating Laser Level Kit',qty:1,days:7,total:95}],
+    total:255, paid:true },
+];
+const MOCK_INVOICES = [
+  { id:'INV-2025-5001', orderId:'ORD-2025-8821', date:'2025-04-22', dueDate:'2025-05-06', amount:1022.45, status:'open' },
+  { id:'INV-2025-4780', orderId:'ORD-2025-6001', date:'2025-04-01', dueDate:'2025-04-15', amount:187.25, status:'overdue' },
+  { id:'INV-2025-4421', orderId:'ORD-2025-7654', date:'2025-04-12', dueDate:'2025-04-26', amount:363.00, status:'paid' },
+  { id:'INV-2025-3892', orderId:'ORD-2025-6543', date:'2025-03-17', dueDate:'2025-03-31', amount:308.55, status:'paid' },
+];
+const MOCK_TICKETS = [
+  { id:'TKT-2025-441', subject:'Mini Excavator hydraulic leak — urgent replacement needed',
+    category:'Equipment Issue', date:'2025-04-23', status:'open', priority:'high',
+    lastUpdate:'2025-04-23', orderId:'ORD-2025-8821', messages:2 },
+  { id:'TKT-2025-389', subject:'Request to extend rental ORD-2025-8821 by 3 extra days',
+    category:'Rental Extension', date:'2025-04-21', status:'in_progress', priority:'medium',
+    lastUpdate:'2025-04-22', orderId:'ORD-2025-8821', messages:4 },
+  { id:'TKT-2025-312', subject:'Invoice INV-2025-4421 — query on VAT calculation',
+    category:'Billing Question', date:'2025-04-13', status:'resolved', priority:'low',
+    lastUpdate:'2025-04-15', orderId:null, messages:6 },
+];
+const MOCK_CLAIMS = [
+  { id:'CLM-2025-098', orderId:'ORD-2025-7654', equipment:'Floor Sander Belt 250mm',
+    description:'Dust bag housing cracked during normal use on day 3. Reported immediately to depot.',
+    date:'2025-04-12', status:'under_review', resolution:null, amount:75 },
+  { id:'CLM-2025-071', orderId:'ORD-2025-6543', equipment:'Concrete Mixer 160L',
+    description:'Drum motor stopped working on day 5. Depot confirmed motor fault — not user damage.',
+    date:'2025-03-15', status:'resolved', resolution:'Replacement unit delivered within 4 hours. No charge to customer.', amount:0 },
+];
+
+// ════════════════════════════ AI ENGINE ═══════════════════════════════
+const AI_PATTERNS = [
+  {
+    kw:['foundation','fundament','trench','graven','dig','excavat'],
+    type:'Excavation & Foundation',
+    intro:'Great — excavation and foundation work! Here are the essential machines:',
+    ids:['mini-excavator','plate-compactor','concrete-mixer'],
+    cross:['laser-level','concrete-vibrator'],
+    tips:['📍 Always locate underground utilities before digging.',
+          '📐 Use a rotating laser level to ensure a perfectly level base.',
+          '🌧️ Ensure drainage channels before backfilling.'],
+    fup:'Will you also be pouring concrete for the foundation?'
+  },
+  {
+    kw:['concrete','beton','pour','cast','mix','mortar','screed'],
+    type:'Concrete Work',
+    intro:'For concrete work, here\'s what you need for a professional result:',
+    ids:['concrete-mixer','concrete-vibrator','laser-level'],
+    cross:['plate-compactor'],
+    tips:['🌡️ Don\'t pour concrete in temperatures below 5°C or above 30°C.',
+          '💧 Keep concrete moist for 7 days after pouring (curing).',
+          '📐 A laser level ensures a flat, even surface.'],
+    fup:'Do you need compaction equipment for the sub-base before pouring?'
+  },
+  {
+    kw:['drill','bore','hole','anchor','kernboor','boren'],
+    type:'Drilling Work',
+    intro:'For drilling into concrete or masonry, these are the right tools:',
+    ids:['rotary-hammer','core-drill'],
+    cross:['dust-extractor','angle-grinder'],
+    tips:['💨 Always use a dust extractor — concrete dust is a health hazard.',
+          '💧 Use water cooling for core drilling to extend diamond bit life.',
+          '🔍 Scan walls for rebar and cables before drilling large holes.'],
+    fup:'What diameter holes? For 50mm+ pipes and cables, the core drill is ideal.'
+  },
+  {
+    kw:['demolish','break','sloop','strip','breken','slopen'],
+    type:'Demolition',
+    intro:'For demolition and breaking work, here\'s your setup:',
+    ids:['jackhammer','angle-grinder'],
+    cross:['dust-extractor'],
+    tips:['🦺 Always wear PPE: P3 dust mask, goggles, hearing protection.',
+          '⚠️ Check for load-bearing walls before demolition.',
+          '🌬️ Ensure ventilation — silica dust is hazardous.'],
+    fup:'Is this indoor or outdoor? That affects dust management needs.'
+  },
+  {
+    kw:['scaffold','height','ceiling','plafond','stelling','ladder'],
+    type:'Work at Height',
+    intro:'For work at height, safety and platform stability are key:',
+    ids:['scaffolding-4m','scissor-lift'],
+    cross:['paint-sprayer','laser-level'],
+    tips:['🔒 Ensure outriggers are fully extended on firm level ground.',
+          '⚡ Check overhead power lines before using elevated platforms.',
+          '🧰 Use a tool belt — keep both hands free at height.'],
+    fup:'What working height do you need? Under 4m: scaffold tower. Over 4m: scissor lift.'
+  },
+  {
+    kw:['floor','vloer','parquet','wood','sand','schuren','hardwood'],
+    type:'Floor Preparation',
+    intro:'For floor sanding and preparation, here\'s the ideal combination:',
+    ids:['floor-sander','dust-extractor'],
+    cross:['laser-level'],
+    tips:['🌲 Sand with the grain — start 40-grit, finish 100-grit.',
+          '💨 Dust extractor is essential — wood dust is a fire hazard.',
+          '🚪 Seal doorways to contain dust to the work area.'],
+    fup:'Are you sanding bare wood or stripping an old finish?'
+  },
+  {
+    kw:['tile','tegel','bathroom','badkamer','ceramic','porcelain'],
+    type:'Tiling Project',
+    intro:'For tiling work, precision cutting is essential:',
+    ids:['tile-cutter','laser-level'],
+    cross:['angle-grinder','dust-extractor'],
+    tips:['📐 Use a laser level — especially critical in bathrooms.',
+          '💧 Wet cutting gives cleaner results and less dust.',
+          '🧲 Use suction cups for 60×60cm+ format tiles.'],
+    fup:'Are you tiling floors, walls, or both?'
+  },
+  {
+    kw:['paint','schilder','spray','coat','wall','muur','ceiling'],
+    type:'Painting & Coating',
+    intro:'For painting large surfaces, airless spraying is far faster than roller:',
+    ids:['paint-sprayer','scaffolding-4m'],
+    cross:['dust-extractor'],
+    tips:['🎨 Mask all edges, windows, and floors before spraying.',
+          '💨 Wear a respirator mask when spraying — fumes are toxic.',
+          '🌡️ Don\'t spray in temperatures below 10°C.'],
+    fup:'What surface area? For over 50m², the airless sprayer saves significant time.'
+  },
+  {
+    kw:['clean','wash','pressure','hogedruk','algae','graffiti','schoon'],
+    type:'Pressure Cleaning',
+    intro:'For heavy-duty surface cleaning:',
+    ids:['pressure-washer'],
+    cross:['angle-grinder'],
+    tips:['💧 25° nozzle for general cleaning; 15° for stubborn deposits.',
+          '🌱 Use eco-friendly detergents near gardens or water drains.',
+          '👁️ Never point at people — 200 bar causes serious injury.'],
+    fup:'What surface? Paving, render, decking, or facade?'
+  },
+  {
+    kw:['generator','power','aggregaat','electricity','remote','stroom'],
+    type:'Remote Power Supply',
+    intro:'For sites without mains power:',
+    ids:['generator-5kva','air-compressor'],
+    cross:['dust-extractor'],
+    tips:['⛽ Add 20% headroom to your total power draw calculation.',
+          '🔌 Never overload the generator — it damages tools and itself.',
+          '💨 Always run generators in ventilated areas — CO is deadly.'],
+    fup:'What tools will run simultaneously? I can help size the right generator.'
+  },
+  {
+    kw:['road','asphalt','pave','oprit','parking','driveway'],
+    type:'Road & Paving',
+    intro:'For road and paving projects, compaction quality makes the difference:',
+    ids:['roller-compactor','plate-compactor','concrete-saw'],
+    cross:['laser-level'],
+    tips:['🌡️ Asphalt must be laid at 140–160°C and compacted before cooling.',
+          '📏 Cut clean expansion joints to prevent random cracking.',
+          '🔄 Minimum 4 roller passes for adequate compaction.'],
+    fup:'What area in m²? Helps determine plate compactor vs full roller.'
+  },
+  {
+    kw:['level','measure','survey','waterpas','meten','laser','align'],
+    type:'Surveying & Measuring',
+    intro:'For precision measurements and alignment:',
+    ids:['laser-level'],
+    cross:[],
+    tips:['☀️ In direct sunlight, use a laser detector rather than the visible beam.',
+          '🌡️ Allow 5 min warm-up for maximum accuracy.',
+          '🔋 Carry spare batteries on pour day — a dead laser is a major problem.'],
+    fup:'What area size? For outdoor sites over 200m, a rotating laser with detector is essential.'
+  }
+];
+
+const FALLBACKS = [
+  'I\'m here to help you find the right rental equipment! Tell me about your project — what are you building or working on?',
+  'Could you describe your project in more detail? E.g.: construction, renovation, landscaping, road work?',
+  'I\'d love to help! What\'s the main task — drilling, concrete, demolition, cleaning, or something else?'
+];
+let fbIdx = 0;
+
+function findProductsById(ids) {
+  return ids.map(id => PRODUCTS.find(p => p.id === id)).filter(Boolean);
+}
+
+function processAIMessage(msg) {
+  const lower = msg.toLowerCase();
+  let best = null, bestScore = 0;
+  for (const p of AI_PATTERNS) {
+    const score = p.kw.filter(k => lower.includes(k)).length;
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+  if (best) {
+    const main = findProductsById(best.ids);
+    const cross = findProductsById(best.cross);
+    const allProds = [...main, ...cross];
+    const crossSection = cross.length
+      ? '\n\n<strong>Also consider:</strong>\n' + cross.map(p=>`• ${p.name} — €${p.dailyRate}/day`).join('\n')
+      : '';
+    const tipsSection = best.tips.length
+      ? '\n\n<strong>Project tips:</strong>\n' + best.tips.join('\n')
+      : '';
+    const content = `<strong>${best.intro}</strong>\n${main.map(p=>`• <strong>${p.name}</strong> — €${p.dailyRate}/day | €${p.weeklyRate}/week`).join('\n')}${crossSection}${tipsSection}\n\n${best.fup}`;
+    return { content, products: allProds };
+  }
+  if (/hello|hi|hallo|hey/.test(lower)) {
+    return { content: 'Hello! 👋 Tell me about your project and I\'ll recommend the best rental equipment for the job.' };
+  }
+  if (/quote|cart|price|order|prijs/.test(lower)) {
+    return { content: 'To get a quote, add equipment to your cart using <strong>+ Add to Cart</strong> buttons, then click <strong>Create Quote</strong> in the cart. You\'ll get a downloadable PDF quote!' };
+  }
+  const r = FALLBACKS[fbIdx++ % FALLBACKS.length];
+  return { content: r };
+}
+
+function getInitialMessage() {
+  return {
+    id:'init',role:'assistant',
+    content:'👋 Hi! I\'m your Boels rental assistant.\n\nDescribe your project and I\'ll recommend the right equipment, suggest cross-rentals, and share professional tips.\n\n<em>Try: "I need to lay a concrete terrace" or "I\'m renovating a bathroom"</em>'
+  };
+}
+
+// ═══════════════════════════ VUE APP ════════════════════════════════
+const {createApp, nextTick} = Vue;
+createApp({
+  data() {
+    return {
+      view: 'catalog',
+      cart: [],
+      category: 'all',
+      search: '',
+      cartOpen: false,
+      aiOpen: false,
+      loginOpen: false,
+      customer: null,
+      quoteRef: this.genRef(),
+      depot: 'Boels Depot Amsterdam-Noord',
+      downloading: false,
+      pdfError: '',
+      aiMessages: [getInitialMessage()],
+      aiInput: '',
+      isListening: false,
+      loginTab: 'demo',
+      qrScanning: false,
+      categories: CATEGORIES,
+      products: PRODUCTS,
+      depots: [
+        'Boels Depot Amsterdam-Noord',
+        'Boels Depot Rotterdam-Zuid',
+        'Boels Depot Utrecht-Centrum',
+        'Boels Depot Den Haag',
+        'Boels Depot Eindhoven',
+        'Boels Depot Groningen',
+      ],
+      demoCustomers: [
+        {name:'Jan de Vries',id:'B2B-10023',company:'De Vries Aannemers BV',type:'B2B'},
+        {name:'Maria Bakker',id:'B2B-10058',company:'Bakker Renovaties',type:'B2B'},
+        {name:'Cash Customer',id:'CASH-00001',company:'Walk-in Customer',type:'Cash'},
+      ],
+      accountTab: 'dashboard',
+      openNewTicket: false,
+      openNewClaim: false,
+      ticketSubmitted: false,
+      claimSubmitted: false,
+      lastTicketId: '',
+      lastClaimId: '',
+      ticketForm: { category:'', orderId:'', subject:'', priority:'Medium', description:'' },
+      claimForm: { orderId:'', equipment:'', type:'', incidentDate:'', description:'' },
+      mockOrders: MOCK_ORDERS,
+      mockInvoices: MOCK_INVOICES,
+      mockTickets: MOCK_TICKETS,
+      mockClaims: MOCK_CLAIMS,
+        'I need to dig a trench',
+        'Bathroom renovation',
+        'Pour a concrete floor',
+        'Work at height',
+        'Floor sanding',
+        'Pressure wash driveway',
+      ],
+    };
+  },
+  computed: {
+    filteredProducts() {
+      const q = this.search.toLowerCase();
+      return this.products.filter(p => {
+        const cat = this.category === 'all' || p.category === this.category;
+        const srch = !q || p.name.toLowerCase().includes(q) ||
+          p.description.toLowerCase().includes(q) ||
+          p.tags.some(t => t.includes(q));
+        return cat && srch;
+      });
+    },
+    cartTotal() {
+      return this.cart.reduce((sum, item) => sum + this.lineTotal(item), 0);
+    },
+    currentCategoryLabel() {
+      const cat = this.categories.find(c => c.id === this.category);
+      return cat ? cat.label : 'Equipment';
+    },
+    accountTabs() {
+      const openTickets = this.mockTickets.filter(t=>t.status!=='resolved').length;
+      const overdueInv = this.mockInvoices.filter(i=>i.status==='overdue').length;
+      return [
+        { id:'dashboard', emoji:'🏠', label:'Dashboard' },
+        { id:'orders',    emoji:'📦', label:'Orders', badge: this.mockOrders.filter(o=>o.status==='active').length||null },
+        { id:'invoices',  emoji:'🧾', label:'Invoices', badge: overdueInv||null },
+        { id:'tickets',   emoji:'🎫', label:'Tickets',  badge: openTickets||null },
+        { id:'claims',    emoji:'📋', label:'Claims' },
+      ];
+    },
+    ytdSpend() {
+      return this.mockInvoices.filter(i=>i.status==='paid').reduce((s,i)=>s+i.amount,0).toFixed(0);
+    },
+    recentActivity() {
+      return [
+        { id:1, icon:'🟢', title:'Rental started — ORD-2025-8821', sub:'Mini Excavator + Plate Compactor · Amsterdam-Noord', date:'Apr 22' },
+        { id:2, icon:'🎫', title:'Ticket opened — TKT-2025-441', sub:'Equipment Issue · High priority', date:'Apr 23' },
+        { id:3, icon:'🧾', title:'Invoice issued — INV-2025-5001', sub:'€1,022.45 due May 6', date:'Apr 22' },
+        { id:4, icon:'✅', title:'Rental completed — ORD-2025-7654', sub:'Floor Sander · Rotterdam-Zuid', date:'Apr 12' },
+        { id:5, icon:'💳', title:'Payment received — INV-2025-4421', sub:'€363.00 cleared', date:'Apr 13' },
+      ];
+    },
+      return new Date().toLocaleDateString('en-GB', {day:'2-digit',month:'long',year:'numeric'});
+    },
+  },
+  methods: {
+    genRef() {
+      return 'BQ-' + new Date().getFullYear() + '-' + (Math.floor(Math.random()*90000)+10000);
+    },
+    setView(v) {
+      this.view = v;
+      this.cartOpen = false;
+      this.aiOpen = false;
+    },
+    togglePanel(which) {
+      if (which === 'cart') { this.cartOpen = !this.cartOpen; this.aiOpen = false; }
+      else { this.aiOpen = !this.aiOpen; this.cartOpen = false; }
+      this.loginOpen = false;
+    },
+    addToCart(product) {
+      if (!this.isInCart(product.id)) {
+        this.cart.push({product, quantity:1, durationDays:1});
+      }
+    },
+    removeFromCart(id) {
+      this.cart = this.cart.filter(i => i.product.id !== id);
+    },
+    isInCart(id) {
+      return this.cart.some(i => i.product.id === id);
+    },
+    updateDuration(id, days) {
+      const item = this.cart.find(i => i.product.id === id);
+      if (item) item.durationDays = Math.max(1, days);
+    },
+    lineTotal(item) {
+      const w = Math.floor(item.durationDays / 7);
+      const d = item.durationDays % 7;
+      return (w * item.product.weeklyRate + d * item.product.dailyRate) * item.quantity;
+    },
+    fmtDuration(days) {
+      const w = Math.floor(days / 7), d = days % 7;
+      if (w > 0 && d > 0) return `${w}w ${d}d`;
+      if (w > 0) return `${w} week${w!==1?'s':''}`;
+      return `${d} day${d!==1?'s':''}`;
+    },
+    createQuote() {
+      if (this.cart.length === 0) return;
+      this.quoteRef = this.genRef();
+      this.view = 'quote';
+      this.cartOpen = false;
+    },
+    clearAndNew() {
+      this.cart = [];
+      this.quoteRef = this.genRef();
+      this.view = 'catalog';
+    },
+    loginAs(c) {
+      this.customer = c;
+      this.loginOpen = false;
+    },
+    simulateQR() {
+      this.qrScanning = true;
+      setTimeout(() => {
+        this.loginAs(this.demoCustomers[0]);
+        this.qrScanning = false;
+      }, 1800);
+    },
+    // ─── Account methods ───
+    reorderItems(order) {
+      order.items.forEach(item => {
+        const prod = PRODUCTS.find(p => p.name === item.name);
+        if (prod && !this.isInCart(prod.id)) this.addToCart(prod);
+      });
+      this.setView('catalog');
+      this.$nextTick(() => { this.cartOpen = true; });
+    },
+    submitTicket() {
+      if (!this.ticketForm.subject || !this.ticketForm.category || !this.ticketForm.description) return;
+      const id = 'TKT-2025-' + (Math.floor(Math.random()*500)+500);
+      this.mockTickets.unshift({
+        id, subject: this.ticketForm.subject, category: this.ticketForm.category,
+        date: new Date().toISOString().slice(0,10), status:'open',
+        priority: this.ticketForm.priority.toLowerCase(), lastUpdate: new Date().toISOString().slice(0,10),
+        orderId: this.ticketForm.orderId||null, messages:1
+      });
+      this.lastTicketId = id;
+      this.ticketSubmitted = true;
+      this.ticketForm = { category:'', orderId:'', subject:'', priority:'Medium', description:'' };
+      setTimeout(() => { this.ticketSubmitted=false; this.openNewTicket=false; }, 4000);
+    },
+    submitClaim() {
+      if (!this.claimForm.orderId || !this.claimForm.equipment || !this.claimForm.description) return;
+      const id = 'CLM-2025-' + (Math.floor(Math.random()*200)+200);
+      this.mockClaims.unshift({
+        id, orderId: this.claimForm.orderId, equipment: this.claimForm.equipment,
+        description: this.claimForm.description, date: this.claimForm.incidentDate||new Date().toISOString().slice(0,10),
+        status:'under_review', resolution:null, amount:0
+      });
+      this.lastClaimId = id;
+      this.claimSubmitted = true;
+      this.claimForm = { orderId:'', equipment:'', type:'', incidentDate:'', description:'' };
+      setTimeout(() => { this.claimSubmitted=false; this.openNewClaim=false; }, 4000);
+    },
+    downloadInvoicePDF(inv) {
+      try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit:'mm', format:'a4' });
+        const PW=210, M=15, CW=PW-M*2;
+        doc.setFillColor(255,102,0); doc.rect(0,0,PW,38,'F');
+        doc.setTextColor(255,255,255); doc.setFontSize(26); doc.setFont('helvetica','bold');
+        doc.text('BOELS', M, 22);
+        doc.setFontSize(10); doc.setFont('helvetica','normal');
+        doc.text('Rental · Invoice', M, 30);
+        doc.setFontSize(9); doc.text('INVOICE', PW-M, 14, {align:'right'});
+        doc.setFontSize(14); doc.setFont('helvetica','bold');
+        doc.text(inv.id, PW-M, 23, {align:'right'});
+        doc.setFontSize(9); doc.setFont('helvetica','normal');
+        doc.text('Issue date: '+inv.date, PW-M, 30, {align:'right'});
+        let y=50;
+        doc.setFillColor(245,246,250); doc.roundedRect(M,y,CW/2-3,32,2,2,'F');
+        doc.roundedRect(M+CW/2+3,y,CW/2-3,32,2,2,'F');
+        doc.setTextColor(130,130,130); doc.setFontSize(7.5); doc.setFont('helvetica','bold');
+        doc.text('BILLED TO', M+4,y+7);
+        doc.setTextColor(13,27,42); doc.setFontSize(9); doc.setFont('helvetica','bold');
+        doc.text(this.customer ? this.customer.name : 'Customer', M+4,y+15);
+        doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(90,90,90);
+        doc.text(this.customer ? this.customer.company : '—', M+4,y+21);
+        doc.text('ID: '+(this.customer ? this.customer.id : '—'), M+4,y+27);
+        const c2=M+CW/2+7;
+        doc.setTextColor(130,130,130); doc.setFontSize(7.5); doc.setFont('helvetica','bold');
+        doc.text('INVOICE DETAILS', c2,y+7);
+        doc.setTextColor(13,27,42); doc.setFontSize(9); doc.setFont('helvetica','normal');
+        doc.text('Order: '+inv.orderId, c2,y+14);
+        doc.text('Due: '+inv.dueDate, c2,y+20);
+        const statusLabel = inv.status==='paid'?'PAID':inv.status==='overdue'?'OVERDUE':'OPEN';
+        if(inv.status==='paid') doc.setTextColor(34,197,94);
+        else if(inv.status==='overdue') doc.setTextColor(239,68,68);
+        else doc.setTextColor(251,146,60);
+        doc.setFontSize(10); doc.setFont('helvetica','bold');
+        doc.text(statusLabel, c2,y+27);
+        y+=42;
+        doc.setFillColor(13,27,42); doc.rect(M,y,CW,8,'F');
+        doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','bold');
+        doc.text('DESCRIPTION', M+3,y+5.5);
+        doc.text('AMOUNT', PW-M-3,y+5.5,{align:'right'});
+        y+=10;
+        const order = this.mockOrders.find(o=>o.id===inv.orderId);
+        if(order) {
+          order.items.forEach((item,i) => {
+            if(i%2===1){doc.setFillColor(249,250,251);doc.rect(M,y-1,CW,9,'F');}
+            doc.setTextColor(13,27,42); doc.setFontSize(8.5); doc.setFont('helvetica','bold');
+            doc.text(item.name, M+3,y+5);
+            doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100); doc.setFontSize(8);
+            doc.text(item.qty+'× · '+item.days+' days', M+80,y+5);
+            doc.setTextColor(13,27,42); doc.setFont('helvetica','bold');
+            doc.text('€'+item.total.toFixed(2), PW-M-3,y+5,{align:'right'});
+            y+=9;
+          });
+        } else {
+          doc.setTextColor(13,27,42); doc.setFontSize(8.5); doc.setFont('helvetica','bold');
+          doc.text('Rental services — '+inv.orderId, M+3,y+5);
+          doc.text('€'+((inv.amount/1.21).toFixed(2)), PW-M-3,y+5,{align:'right'});
+          y+=9;
+        }
+        doc.setDrawColor(220,220,220); doc.line(M,y+3,PW-M,y+3); y+=10;
+        const sub = inv.amount/1.21, vat=inv.amount-sub, tx=PW-M-62;
+        doc.setTextColor(80,80,80); doc.setFontSize(9); doc.setFont('helvetica','normal');
+        doc.text('Subtotal (excl. VAT)', tx,y); doc.text('€'+sub.toFixed(2),PW-M-3,y,{align:'right'}); y+=6;
+        doc.text('VAT 21%', tx,y); doc.text('€'+vat.toFixed(2),PW-M-3,y,{align:'right'}); y+=4;
+        doc.setDrawColor(255,102,0); doc.line(tx,y,PW-M,y); y+=5;
+        doc.setTextColor(13,27,42); doc.setFontSize(12); doc.setFont('helvetica','bold');
+        doc.text('TOTAL', tx,y); doc.text('€'+inv.amount.toFixed(2),PW-M-3,y,{align:'right'});
+        y+=16;
+        if(inv.status!=='paid') {
+          doc.setFillColor(255,247,237); doc.roundedRect(M,y,CW,18,2,2,'F');
+          doc.setTextColor(194,65,12); doc.setFontSize(8.5); doc.setFont('helvetica','bold');
+          doc.text('PAYMENT INSTRUCTIONS', M+4,y+7);
+          doc.setFont('helvetica','normal'); doc.setFontSize(8);
+          doc.text('Bank: Boels Rental B.V. · IBAN: NL91 ABNA 0417 1643 00 · BIC: ABNANL2A · Ref: '+inv.id, M+4,y+13);
+        }
+        doc.setFillColor(13,27,42); doc.rect(0,282,PW,15,'F');
+        doc.setTextColor(150,150,150); doc.setFontSize(7);
+        doc.text('Boels Rental · www.boels.com · +31 (0) 88 222 0000 · KvK 12345678 · VAT NL123456789B01', PW/2,291,{align:'center'});
+        doc.save('Boels-Invoice-'+inv.id+'.pdf');
+      } catch(e) { alert('PDF download failed. Please try again.'); }
+    },
+    sendAI(text) {
+      const msg = (text || this.aiInput).trim();
+      if (!msg) return;
+      this.aiMessages.push({id: Date.now()+'u', role:'user', content:msg});
+      this.aiInput = '';
+      const res = processAIMessage(msg);
+      this.aiMessages.push({id: Date.now()+'a', role:'assistant', content:res.content, products:res.products||[]});
+      nextTick(() => {
+        const el = this.$refs.aiScroll;
+        if (el) el.scrollTop = el.scrollHeight;
+      });
+    },
+    fmtAI(text) {
+      return text
+        .replace(/\n/g, '<br>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/<em>(.*?)<\/em>/g, '<em>$1</em>');
+    },
+    startVoice() {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) { alert('Voice input requires Chrome or Edge browser.'); return; }
+      const rec = new SR();
+      rec.lang = 'en-US';
+      rec.interimResults = false;
+      rec.onstart = () => this.isListening = true;
+      rec.onend   = () => this.isListening = false;
+      rec.onerror = () => this.isListening = false;
+      rec.onresult = e => {
+        const transcript = e.results[0][0].transcript;
+        this.aiInput = transcript;
+        this.sendAI(transcript);
+      };
+      rec.start();
+    },
+    // ─── PDF ───
+    async downloadPDF() {
+      this.downloading = true;
+      this.pdfError = '';
+      try {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit:'mm', format:'a4' });
+        const PW = 210, M = 15, CW = PW - M*2;
+        let y = 0;
+
+        // Orange header
+        doc.setFillColor(255,102,0);
+        doc.rect(0,0,PW,38,'F');
+        doc.setTextColor(255,255,255);
+        doc.setFontSize(26); doc.setFont('helvetica','bold');
+        doc.text('BOELS', M, 22);
+        doc.setFontSize(10); doc.setFont('helvetica','normal');
+        doc.text('Rental Portal · In-Store Quotation', M, 30);
+        doc.setFontSize(9);
+        doc.text('RENTAL QUOTATION', PW-M, 14, {align:'right'});
+        doc.setFontSize(12); doc.setFont('helvetica','bold');
+        doc.text(this.quoteRef, PW-M, 22, {align:'right'});
+        doc.setFontSize(9); doc.setFont('helvetica','normal');
+        doc.text(this.todayDate, PW-M, 30, {align:'right'});
+
+        y = 48;
+
+        // Customer / Depot blocks
+        const cust = this.customer;
+        doc.setFillColor(245,246,250);
+        doc.roundedRect(M, y, CW/2-3, 32, 2,2,'F');
+        doc.roundedRect(M+CW/2+3, y, CW/2-3, 32, 2,2,'F');
+
+        doc.setTextColor(130,130,130); doc.setFontSize(7.5); doc.setFont('helvetica','bold');
+        doc.text('CUSTOMER', M+4, y+7);
+        doc.setTextColor(13,27,42); doc.setFontSize(9); doc.setFont('helvetica','bold');
+        doc.text(cust ? cust.name : 'Walk-in Customer', M+4, y+15);
+        doc.setFontSize(8); doc.setFont('helvetica','normal');
+        doc.setTextColor(90,90,90);
+        doc.text(cust ? cust.company : '—', M+4, y+21);
+        doc.text('ID: '+(cust ? cust.id : 'CASH'), M+4, y+27);
+
+        const col2 = M+CW/2+7;
+        doc.setTextColor(130,130,130); doc.setFontSize(7.5); doc.setFont('helvetica','bold');
+        doc.text('DEPOT / PICKUP', col2, y+7);
+        doc.setTextColor(13,27,42); doc.setFontSize(9); doc.setFont('helvetica','bold');
+        doc.text(this.depot, col2, y+15);
+        doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(90,90,90);
+        doc.text('Mon–Sat 07:00–18:00', col2, y+21);
+        doc.text('+31 (0) 88 222 0000', col2, y+27);
+
+        y += 40;
+
+        // Table header
+        doc.setFillColor(13,27,42);
+        doc.rect(M, y, CW, 8,'F');
+        doc.setTextColor(255,255,255); doc.setFontSize(7.5); doc.setFont('helvetica','bold');
+        doc.text('EQUIPMENT', M+3, y+5.5);
+        doc.text('RATE', M+95, y+5.5, {align:'center'});
+        doc.text('DURATION', M+115, y+5.5, {align:'center'});
+        doc.text('QTY', M+133, y+5.5, {align:'center'});
+        doc.text('SUBTOTAL', PW-M-3, y+5.5, {align:'right'});
+        y += 10;
+
+        // Rows
+        this.cart.forEach((item,idx) => {
+          const lt = this.lineTotal(item);
+          const dur = this.fmtDuration(item.durationDays);
+          if (idx%2===1) { doc.setFillColor(249,250,251); doc.rect(M,y-1,CW,9,'F'); }
+          doc.setTextColor(13,27,42); doc.setFontSize(8.5); doc.setFont('helvetica','bold');
+          doc.text(item.product.name, M+3, y+5);
+          doc.setFont('helvetica','normal'); doc.setTextColor(100,100,100); doc.setFontSize(7.5);
+          doc.text('€'+item.product.dailyRate+'/day', M+95, y+5, {align:'center'});
+          doc.text(dur, M+115, y+5, {align:'center'});
+          doc.text(item.quantity+'x', M+133, y+5, {align:'center'});
+          doc.setTextColor(255,102,0); doc.setFontSize(9); doc.setFont('helvetica','bold');
+          doc.text('€'+lt.toFixed(2), PW-M-3, y+5, {align:'right'});
+          y += 9;
+        });
+
+        // Divider
+        doc.setDrawColor(220,220,220);
+        doc.line(M, y+3, PW-M, y+3); y += 10;
+
+        // Totals
+        const tx = PW-M-62;
+        const vat = this.cartTotal*0.21;
+        doc.setTextColor(80,80,80); doc.setFontSize(9); doc.setFont('helvetica','normal');
+        doc.text('Subtotal (excl. VAT)', tx, y);
+        doc.text('€'+this.cartTotal.toFixed(2), PW-M-3, y, {align:'right'}); y+=6;
+        doc.text('VAT 21%', tx, y);
+        doc.text('€'+vat.toFixed(2), PW-M-3, y, {align:'right'}); y+=4;
+        doc.setDrawColor(255,102,0); doc.line(tx, y, PW-M, y); y+=5;
+        doc.setTextColor(13,27,42); doc.setFontSize(12); doc.setFont('helvetica','bold');
+        doc.text('TOTAL', tx, y);
+        doc.text('€'+(this.cartTotal*1.21).toFixed(2), PW-M-3, y, {align:'right'});
+
+        y += 14;
+
+        // T&C box
+        doc.setFillColor(245,246,250);
+        doc.roundedRect(M, y, CW, 30, 2,2,'F');
+        doc.setTextColor(100,100,100); doc.setFontSize(7.5); doc.setFont('helvetica','bold');
+        doc.text('TERMS & CONDITIONS', M+4, y+7);
+        doc.setFont('helvetica','normal');
+        const terms = [
+          '• This quotation is valid for 30 days from the date above.',
+          '• Rental begins upon collection and ends upon return to the depot.',
+          '• Equipment must be returned in the same condition as collected.',
+          '• Standard Boels rental conditions apply — available at all depots and on boels.com.',
+          '• Prices exclude VAT (BTW). A deposit may be required at collection.',
+        ];
+        terms.forEach((t,i) => doc.text(t, M+4, y+13+i*4));
+
+        // Footer
+        doc.setFillColor(13,27,42);
+        doc.rect(0, 282, PW, 15,'F');
+        doc.setTextColor(150,150,150); doc.setFontSize(7);
+        doc.text('Boels Rental · www.boels.com · +31 (0) 88 222 0000', PW/2, 291, {align:'center'});
+        doc.setTextColor(200,200,200);
+        doc.text('Quote ref: '+this.quoteRef, M, 291);
+        doc.text('Generated: '+this.todayDate, PW-M, 291, {align:'right'});
+
+        doc.save('Boels-Quote-'+this.quoteRef+'.pdf');
+      } catch(err) {
+        console.error(err);
+        this.pdfError = 'Could not generate PDF. Try: File → Print → Save as PDF as an alternative.';
+      } finally {
+        this.downloading = false;
+      }
+    },
+  }
+}).mount('#app');
+</script>
+</body>
+</html>
