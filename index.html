@@ -297,6 +297,398 @@
     </div>
   </main>
 
+  <!-- ══════════════════════════ RESERVATION VIEW ════════════════════════ -->
+  <main v-show="view==='reservation'" class="max-w-3xl mx-auto px-4 py-6">
+    <button @click="setView('catalog')" class="text-sm text-gray-500 hover:text-[#FF6600] flex items-center gap-1.5 mb-5 transition-colors">← Back to catalog</button>
+
+    <!-- Process step indicator -->
+    <div class="flex items-center gap-1 mb-6 overflow-x-auto pb-1">
+      <template v-for="(step,i) in processSteps" :key="step.id">
+        <div class="flex items-center gap-1 flex-shrink-0">
+          <div :class="i<=1 ? 'bg-[#FF6600] text-white' : 'bg-gray-200 text-gray-500'"
+            class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold">{{i+1}}</div>
+          <span :class="i<=1 ? 'text-[#FF6600] font-semibold' : 'text-gray-400'" class="text-xs hidden sm:inline">{{step.label}}</span>
+        </div>
+        <div v-if="i<processSteps.length-1" class="w-6 h-0.5 flex-shrink-0" :class="i<1?'bg-[#FF6600]':'bg-gray-200'"></div>
+      </template>
+    </div>
+
+    <div class="space-y-4">
+      <!-- Price Indication card -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="bg-[#0D1B2A] text-white px-5 py-4 flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h2 class="font-bold text-lg">Price Indication</h2>
+            <p class="text-xs text-gray-300">{{reservationRef}} · {{customer ? customer.type+' customer' : 'Cash / Walk-in'}}</p>
+          </div>
+          <span v-if="avgDiscount>0" class="bg-green-500 text-white text-xs font-bold px-3 py-1 rounded-full">{{(avgDiscount*100).toFixed(0)}}% discount applied</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="bg-gray-50 text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                <th class="text-left px-5 py-2.5">Equipment</th>
+                <th class="text-center px-3 py-2.5">Duration</th>
+                <th class="text-center px-3 py-2.5 hidden sm:table-cell">List Price</th>
+                <th class="text-center px-3 py-2.5 hidden sm:table-cell">Discount</th>
+                <th class="text-right px-5 py-2.5">Your Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(item,i) in cart" :key="item.product.id" :class="i%2===0?'bg-white':'bg-gray-50/50'">
+                <td class="px-5 py-3 font-medium text-[#0D1B2A]">{{item.product.name}}</td>
+                <td class="px-3 py-3 text-center text-gray-500">{{fmtDuration(item.durationDays)}}</td>
+                <td class="px-3 py-3 text-center text-gray-400 hidden sm:table-cell" :class="getItemDiscount(item)>0?'line-through':''">€{{lineTotal(item).toFixed(2)}}</td>
+                <td class="px-3 py-3 text-center font-semibold hidden sm:table-cell" :class="getItemDiscount(item)>0?'text-green-600':'text-gray-300'">{{(getItemDiscount(item)*100).toFixed(0)}}%</td>
+                <td class="px-5 py-3 text-right font-bold text-[#FF6600]">€{{discountedLineTotal(item).toFixed(2)}}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="px-5 py-4 border-t border-gray-100 bg-gray-50">
+          <div class="max-w-xs ml-auto space-y-1.5 text-sm">
+            <div v-if="avgDiscount>0" class="flex justify-between text-gray-400">
+              <span>List total</span><span class="line-through">€{{cartTotal.toFixed(2)}}</span>
+            </div>
+            <div v-if="avgDiscount>0" class="flex justify-between text-green-600 font-semibold">
+              <span>Customer discount</span><span>−€{{(cartTotal-discountedCartTotal).toFixed(2)}}</span>
+            </div>
+            <div class="flex justify-between text-gray-600">
+              <span>Subtotal (excl. VAT)</span><span>€{{discountedCartTotal.toFixed(2)}}</span>
+            </div>
+            <div class="flex justify-between text-gray-600">
+              <span>VAT 21%</span><span>€{{(discountedCartTotal*0.21).toFixed(2)}}</span>
+            </div>
+            <div class="border-t-2 border-[#FF6600] pt-2 flex justify-between">
+              <span class="font-black text-[#0D1B2A]">TOTAL</span>
+              <span class="font-black text-[#FF6600]">€{{(discountedCartTotal*1.21).toFixed(2)}}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Dates & Depot -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h3 class="font-bold text-[#0D1B2A] mb-4 flex items-center gap-2">📅 Rental Period &amp; Depot</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Start Date *</label>
+            <input type="date" v-model="rentalStartDate"
+              class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600]" />
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">End Date</label>
+            <input type="date" v-model="rentalEndDate"
+              class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600]" />
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Pickup / Return Depot</label>
+            <select v-model="depot"
+              class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600] bg-white">
+              <option v-for="d in depots" :key="d" :value="d">{{d}}</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Availability Check -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-bold text-[#0D1B2A] flex items-center gap-2">🏷️ Stock &amp; Availability</h3>
+          <button @click="checkAvailability"
+            class="text-xs bg-[#0D1B2A] hover:bg-[#1E3A5F] text-white px-4 py-1.5 rounded-lg font-semibold transition-colors">
+            {{availabilityChecked ? '↻ Recheck' : 'Check Stock'}}
+          </button>
+        </div>
+        <p v-if="!availabilityChecked" class="text-sm text-gray-400 italic text-center py-3">Click "Check Stock" to verify availability at {{depot}}</p>
+        <div v-if="availabilityChecked" class="space-y-2">
+          <div v-for="item in cart" :key="'av-'+item.product.id"
+            class="flex items-center justify-between rounded-xl p-3 border gap-3"
+            :class="getAvailability(item.product.id).available ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'">
+            <div class="flex items-center gap-3 min-w-0">
+              <span class="text-lg flex-shrink-0">{{getAvailability(item.product.id).available ? '✅' : '❌'}}</span>
+              <div class="min-w-0">
+                <p class="font-semibold text-sm text-[#0D1B2A] truncate">{{item.product.name}}</p>
+                <p v-if="getAvailability(item.product.id).available" class="text-xs text-green-700">
+                  Asset: <strong>{{getAvailability(item.product.id).assetId}}</strong> · Ready for collection
+                </p>
+                <p v-else class="text-xs text-red-700">Not available at {{depot.replace('Boels Depot ','')}} for selected dates</p>
+              </div>
+            </div>
+            <div v-if="!getAvailability(item.product.id).available" class="flex-shrink-0">
+              <select @change="e => setResolution(item.product.id, e.target.value)"
+                class="text-xs border border-red-300 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-[#FF6600]">
+                <option value="">Resolve…</option>
+                <option value="transfer">Transfer from other depot (+1–2 days)</option>
+                <option value="alternative">Customer accepts alternative</option>
+                <option value="adjust">Adjust rental dates</option>
+              </select>
+            </div>
+            <div v-if="getAvailability(item.product.id).available" class="text-xs text-green-600 font-semibold flex-shrink-0">Allocated</div>
+          </div>
+          <div v-if="allAvailable" class="mt-2 bg-green-50 border border-green-200 rounded-xl p-3 text-green-700 text-sm font-semibold flex items-center gap-2">
+            ✅ All items available — ready to proceed to contract
+          </div>
+          <div v-if="!allAvailable && stockResolved" class="mt-2 bg-blue-50 border border-blue-200 rounded-xl p-3 text-blue-700 text-sm flex items-center gap-2">
+            ℹ️ Stock issues resolved — you may proceed to contract
+          </div>
+        </div>
+      </div>
+
+      <!-- Fulfillment / Handover -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h3 class="font-bold text-[#0D1B2A] mb-4 flex items-center gap-2">🚚 Equipment Handover</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <button @click="fulfillmentType='pickup'"
+            :class="fulfillmentType==='pickup' ? 'border-[#FF6600] bg-orange-50' : 'border-gray-200 hover:border-gray-300'"
+            class="p-4 rounded-xl border-2 text-left transition-all">
+            <div class="text-2xl mb-1.5">🏪</div>
+            <p class="font-semibold text-sm text-[#0D1B2A]">Customer Pickup</p>
+            <p class="text-xs text-gray-500 mt-0.5">Customer collects from depot</p>
+            <p class="text-xs text-green-600 font-medium mt-0.5">No delivery charge</p>
+          </button>
+          <button @click="fulfillmentType='delivery'"
+            :class="fulfillmentType==='delivery' ? 'border-[#FF6600] bg-orange-50' : 'border-gray-200 hover:border-gray-300'"
+            class="p-4 rounded-xl border-2 text-left transition-all">
+            <div class="text-2xl mb-1.5">🚛</div>
+            <p class="font-semibold text-sm text-[#0D1B2A]">Depot Delivery</p>
+            <p class="text-xs text-gray-500 mt-0.5">We deliver to customer site</p>
+            <p class="text-xs text-orange-600 font-medium mt-0.5">Transport cost on request</p>
+          </button>
+        </div>
+        <div v-if="fulfillmentType==='delivery'" class="mt-3">
+          <label class="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Delivery Address</label>
+          <input type="text" v-model="deliveryAddress" placeholder="Street, house number, postcode, city"
+            class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600]" />
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="flex flex-col sm:flex-row gap-3">
+        <button @click="initContract"
+          :disabled="!availabilityChecked || (!allAvailable && !stockResolved) || !rentalStartDate"
+          class="flex-1 bg-[#FF6600] hover:bg-[#CC5200] text-white font-bold py-4 rounded-xl text-base transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+          Proceed to Contract →
+        </button>
+        <button @click="createQuote"
+          class="px-6 py-4 border-2 border-gray-200 hover:border-[#FF6600] text-gray-600 hover:text-[#FF6600] font-semibold rounded-xl transition-all">
+          Save as Quote
+        </button>
+      </div>
+      <p v-if="availabilityChecked && !allAvailable && !stockResolved" class="text-xs text-center text-amber-600">⚠️ Resolve stock issues above before proceeding</p>
+      <p v-if="!rentalStartDate" class="text-xs text-center text-gray-400">Select a start date to continue</p>
+    </div>
+  </main>
+
+  <!-- ══════════════════════════ CONTRACT VIEW ════════════════════════════ -->
+  <main v-show="view==='contract'" class="max-w-3xl mx-auto px-4 py-6">
+    <button @click="setView('reservation')" class="text-sm text-gray-500 hover:text-[#FF6600] flex items-center gap-1.5 mb-5 transition-colors">← Back to reservation</button>
+
+    <!-- Step indicator (step 3 active) -->
+    <div class="flex items-center gap-1 mb-6 overflow-x-auto pb-1">
+      <template v-for="(step,i) in processSteps" :key="'cs'+step.id">
+        <div class="flex items-center gap-1 flex-shrink-0">
+          <div :class="i<=2 ? 'bg-[#FF6600] text-white' : 'bg-gray-200 text-gray-500'"
+            class="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold">{{i+1}}</div>
+          <span :class="i<=2 ? 'text-[#FF6600] font-semibold' : 'text-gray-400'" class="text-xs hidden sm:inline">{{step.label}}</span>
+        </div>
+        <div v-if="i<processSteps.length-1" class="w-6 h-0.5 flex-shrink-0" :class="i<2?'bg-[#FF6600]':'bg-gray-200'"></div>
+      </template>
+    </div>
+
+    <div class="space-y-4">
+      <!-- Contract summary card -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="bg-[#FF6600] px-5 py-4 flex items-center justify-between">
+          <div>
+            <p class="text-white/80 text-xs font-medium uppercase tracking-wide">Rental Contract</p>
+            <h2 class="font-black text-white text-xl">{{contractRef}}</h2>
+          </div>
+          <div class="text-right">
+            <p class="text-white/80 text-xs">{{todayDate}}</p>
+            <p class="text-white text-sm font-semibold">📍 {{depot.replace('Boels Depot ','')}}</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-0 divide-x divide-gray-100 bg-gray-50 border-b border-gray-100">
+          <div class="p-4">
+            <p class="text-xs text-gray-400 font-semibold uppercase mb-1">Customer</p>
+            <p class="font-semibold text-[#0D1B2A] text-sm">{{customer ? customer.name : 'Walk-in Customer'}}</p>
+            <p class="text-xs text-gray-500">{{customer ? customer.company : '—'}}</p>
+            <p class="text-xs text-[#FF6600] font-mono">{{customer ? customer.id : 'CASH'}}</p>
+          </div>
+          <div class="p-4">
+            <p class="text-xs text-gray-400 font-semibold uppercase mb-1">Rental Period</p>
+            <p class="font-semibold text-[#0D1B2A] text-sm">{{formatDate(rentalStartDate)}}<span v-if="rentalEndDate"> → {{formatDate(rentalEndDate)}}</span></p>
+            <p class="text-xs text-gray-500 mt-0.5">{{fulfillmentType==='delivery' ? '🚛 Delivery: '+deliveryAddress : '🏪 Customer pickup'}}</p>
+          </div>
+        </div>
+        <div class="divide-y divide-gray-50">
+          <div v-for="item in cart" :key="'con-'+item.product.id" class="flex items-center gap-3 px-5 py-3">
+            <img :src="item.product.image" :alt="item.product.name"
+              class="w-11 h-11 rounded-lg object-cover bg-gray-100 flex-shrink-0 hidden sm:block"
+              @error="e=>e.target.src='https://picsum.photos/seed/'+item.product.id+'/100/100'" />
+            <div class="flex-1 min-w-0">
+              <p class="font-semibold text-sm text-[#0D1B2A]">{{item.product.name}}</p>
+              <p class="text-xs text-gray-400">{{fmtDuration(item.durationDays)}} · Asset: {{getAvailability(item.product.id).assetId || '—'}}</p>
+            </div>
+            <span class="font-bold text-[#FF6600] text-sm flex-shrink-0">€{{discountedLineTotal(item).toFixed(2)}}</span>
+          </div>
+        </div>
+        <div class="px-5 py-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+          <span class="font-bold text-[#0D1B2A]">Total incl. VAT 21%</span>
+          <span class="font-black text-[#FF6600] text-lg">€{{(discountedCartTotal*1.21).toFixed(2)}}</span>
+        </div>
+      </div>
+
+      <!-- Deposit (cash customers / low credit) -->
+      <div v-if="depositAmount > 0" class="bg-amber-50 border border-amber-200 rounded-2xl p-5">
+        <h3 class="font-bold text-[#0D1B2A] mb-3 flex items-center gap-2">💰 Security Deposit Required</h3>
+        <p class="text-sm text-gray-600 mb-4">A refundable deposit is required for {{customer && customer.type==='Cash' ? 'cash / walk-in customers' : 'customers with a limited credit arrangement'}}. Returned after equipment is back in good condition.</p>
+        <div class="flex items-center justify-between bg-white rounded-xl p-4 border border-amber-200">
+          <div>
+            <p class="text-xs text-gray-400 font-medium uppercase tracking-wide">Deposit Amount</p>
+            <p class="text-2xl font-black text-[#0D1B2A] mt-0.5">€{{depositAmount.toFixed(2)}}</p>
+            <p class="text-xs text-gray-400 mt-0.5">≈ 30% of rental value (incl. VAT)</p>
+          </div>
+          <button @click="depositPaid=!depositPaid"
+            :class="depositPaid ? 'bg-green-500 hover:bg-green-600' : 'bg-[#0D1B2A] hover:bg-[#1E3A5F]'"
+            class="text-white px-5 py-2.5 rounded-xl font-bold text-sm transition-all">
+            {{depositPaid ? '✓ Received' : 'Mark as Paid'}}
+          </button>
+        </div>
+        <p v-if="depositPaid" class="mt-2 text-green-600 text-sm font-semibold flex items-center gap-1.5">✅ Deposit of €{{depositAmount.toFixed(2)}} recorded — {{todayDate}}</p>
+      </div>
+
+      <!-- Digital signature -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h3 class="font-bold text-[#0D1B2A] mb-2 flex items-center gap-2">✍️ Digital Signature</h3>
+        <p class="text-sm text-gray-500 mb-3">By signing, the customer confirms they accept the Boels rental conditions and the equipment list above.</p>
+        <div class="relative border-2 rounded-xl overflow-hidden mb-3 bg-gray-50"
+          :class="contractSigned ? 'border-green-400' : 'border-gray-300'">
+          <canvas ref="sigCanvas" width="600" height="130"
+            class="w-full cursor-crosshair touch-none block"
+            @mousedown="startSign" @mousemove="drawSign" @mouseup="endSign" @mouseleave="endSign"
+            @touchstart.prevent="startSign" @touchmove.prevent="drawSign" @touchend="endSign">
+          </canvas>
+          <div v-if="!signatureStarted && !contractSigned"
+            class="absolute inset-0 flex items-center justify-center pointer-events-none text-gray-300 text-sm select-none">
+            ✍️ Sign here with mouse or touch
+          </div>
+          <div v-if="contractSigned"
+            class="absolute top-2 right-3 text-green-600 text-xs font-bold bg-white/80 px-2 py-0.5 rounded-full">
+            ✅ Signed
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <button v-if="!contractSigned && signatureStarted" @click="confirmSignature"
+            class="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-xl text-sm font-bold transition-colors">
+            ✅ Accept &amp; Sign
+          </button>
+          <button v-if="!contractSigned" @click="clearSignature"
+            class="text-gray-400 hover:text-gray-600 text-sm px-3 py-2 transition-colors">
+            Clear
+          </button>
+          <p v-if="contractSigned" class="text-green-600 text-sm font-semibold">
+            ✅ Signed by {{customer ? customer.name : 'Customer'}} — {{todayDate}}
+          </p>
+        </div>
+      </div>
+
+      <!-- Handover notes -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <h3 class="font-bold text-[#0D1B2A] mb-2 flex items-center gap-2">📝 Handover Notes</h3>
+        <textarea v-model="contractNotes" rows="2"
+          placeholder="Condition notes, accessories included, special instructions…"
+          class="w-full border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#FF6600] resize-none"></textarea>
+      </div>
+
+      <!-- Go On Hire -->
+      <div class="space-y-2">
+        <button @click="goOnHire"
+          :disabled="!contractSigned || (depositAmount > 0 && !depositPaid)"
+          class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-4 rounded-xl text-base transition-all active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-3">
+          🟢 Confirm On Hire — Start Rental
+        </button>
+        <p v-if="!contractSigned" class="text-xs text-center text-amber-600">⚠️ Customer signature required before going On Hire</p>
+        <p v-if="depositAmount>0 && !depositPaid" class="text-xs text-center text-amber-600">⚠️ Record deposit payment before going On Hire</p>
+      </div>
+    </div>
+  </main>
+
+  <!-- ══════════════════════════ ON HIRE VIEW ═════════════════════════════ -->
+  <main v-show="view==='onhire'" class="max-w-3xl mx-auto px-4 py-6">
+    <div class="space-y-5">
+      <!-- Success banner -->
+      <div class="bg-green-600 rounded-2xl p-6 text-center text-white fade-in">
+        <div class="text-5xl mb-3">🟢</div>
+        <h1 class="text-2xl font-black mb-1">Rental Active — On Hire</h1>
+        <p class="text-green-100 text-sm">Equipment handed over. Rental period has started.</p>
+        <div class="mt-4 inline-block bg-white/20 rounded-xl px-6 py-2">
+          <span class="font-mono font-bold text-lg">{{contractRef}}</span>
+        </div>
+      </div>
+
+      <!-- Contract details -->
+      <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="bg-[#0D1B2A] text-white px-5 py-4 flex items-center justify-between">
+          <div>
+            <p class="text-xs text-gray-400">Active Rental Contract</p>
+            <h2 class="font-bold">{{contractRef}}</h2>
+          </div>
+          <span class="bg-green-500 text-white text-xs font-bold px-3 py-1.5 rounded-full">ON HIRE</span>
+        </div>
+        <div class="grid grid-cols-2 divide-x divide-gray-100">
+          <div class="p-4">
+            <p class="text-xs text-gray-400 font-medium uppercase mb-1">Customer</p>
+            <p class="font-semibold text-sm text-[#0D1B2A]">{{customer ? customer.name : 'Walk-in Customer'}}</p>
+            <p class="text-xs text-gray-500">{{customer ? customer.id : 'CASH'}}</p>
+          </div>
+          <div class="p-4">
+            <p class="text-xs text-gray-400 font-medium uppercase mb-1">Return Deadline</p>
+            <p class="font-semibold text-sm text-[#FF6600]">{{formatDate(rentalEndDate) || 'Open'}}</p>
+            <p class="text-xs text-gray-500">{{depot.replace('Boels Depot ','')}}</p>
+          </div>
+          <div class="p-4">
+            <p class="text-xs text-gray-400 font-medium uppercase mb-1">Handover</p>
+            <p class="font-semibold text-sm text-[#0D1B2A]">{{fulfillmentType==='delivery' ? '🚛 Delivered' : '🏪 Picked up'}}</p>
+            <p class="text-xs text-gray-500">{{formatDate(rentalStartDate)}}</p>
+          </div>
+          <div class="p-4">
+            <p class="text-xs text-gray-400 font-medium uppercase mb-1">Contract Value</p>
+            <p class="font-black text-[#FF6600] text-lg">€{{(discountedCartTotal*1.21).toFixed(2)}}</p>
+            <p class="text-xs text-gray-400">incl. VAT</p>
+          </div>
+        </div>
+        <div class="border-t border-gray-100">
+          <div v-for="item in cart" :key="'oh-'+item.product.id"
+            class="flex items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-0">
+            <span class="text-green-500 text-lg flex-shrink-0">✅</span>
+            <div class="flex-1 min-w-0">
+              <p class="font-semibold text-sm text-[#0D1B2A]">{{item.product.name}}</p>
+              <p class="text-xs text-gray-400">{{fmtDuration(item.durationDays)}} · {{getAvailability(item.product.id).assetId || '—'}}</p>
+            </div>
+            <span class="font-bold text-sm text-[#FF6600] flex-shrink-0">€{{discountedLineTotal(item).toFixed(2)}}</span>
+          </div>
+        </div>
+        <div v-if="contractNotes" class="px-5 py-3 bg-gray-50 border-t border-gray-100">
+          <p class="text-xs text-gray-500"><strong>Notes:</strong> {{contractNotes}}</p>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <button @click="customer ? setView('account') : setView('catalog')"
+          class="bg-[#0D1B2A] hover:bg-[#1E3A5F] text-white font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2">
+          📋 View in My Account
+        </button>
+        <button @click="startNewRental"
+          class="bg-[#FF6600] hover:bg-[#CC5200] text-white font-bold py-3.5 rounded-xl transition-colors flex items-center justify-center gap-2">
+          🛒 New Rental
+        </button>
+      </div>
+    </div>
+  </main>
+
   <!-- ══════════════════════════ ACCOUNT VIEW ════════════════════════════ -->
   <main v-show="view==='account'" class="max-w-5xl mx-auto px-4 py-6">
 
@@ -862,11 +1254,18 @@
     <div v-if="cart.length>0" class="border-t border-gray-200 p-4 space-y-3 bg-white">
       <div class="flex justify-between items-center">
         <span class="text-gray-600 font-medium">Subtotal (excl. VAT)</span>
-        <span class="text-xl font-black text-[#0D1B2A]">€{{cartTotal.toFixed(2)}}</span>
+        <div class="text-right">
+          <span class="text-xl font-black text-[#0D1B2A]">€{{cartTotal.toFixed(2)}}</span>
+          <div v-if="customer && customer.id.startsWith('B2B')" class="text-xs text-green-600 font-medium mt-0.5">B2B discount applies →</div>
+        </div>
       </div>
-      <button @click="createQuote"
+      <button @click="initReservation"
         class="w-full bg-[#FF6600] hover:bg-[#CC5200] text-white font-bold py-3.5 rounded-xl text-base transition-colors active:scale-95">
-        Create Quote →
+        Make Reservation →
+      </button>
+      <button @click="createQuote"
+        class="w-full bg-[#0D1B2A] hover:bg-[#1E3A5F] text-white font-semibold py-2.5 rounded-xl text-sm transition-colors active:scale-95">
+        Save as Quote (PDF only)
       </button>
       <button @click="cart=[]" class="w-full text-xs text-gray-400 hover:text-red-500 transition-colors py-1">
         Clear cart
@@ -1472,6 +1871,106 @@ function getInitialMessage() {
   };
 }
 
+// ═══════════════════════ DEPOT STOCK (mock availability) ════════════
+const DEPOT_STOCK = {
+  'Boels Depot Amsterdam-Noord': {
+    'mini-excavator':   {available:true,  assetId:'AMN-EXC-007'},
+    'plate-compactor':  {available:true,  assetId:'AMN-PC-012'},
+    'roller-compactor': {available:false},
+    'concrete-mixer':   {available:true,  assetId:'AMN-CM-003'},
+    'concrete-vibrator':{available:true,  assetId:'AMN-CV-005'},
+    'jackhammer':       {available:true,  assetId:'AMN-JH-019'},
+    'core-drill':       {available:false},
+    'rotary-hammer':    {available:true,  assetId:'AMN-RH-008'},
+    'angle-grinder':    {available:true,  assetId:'AMN-AG-022'},
+    'concrete-saw':     {available:false},
+    'scaffolding-4m':   {available:true,  assetId:'AMN-SC4-006'},
+    'scissor-lift':     {available:true,  assetId:'AMN-SL-002'},
+    'floor-sander':     {available:true,  assetId:'AMN-FS-011'},
+    'tile-cutter':      {available:true,  assetId:'AMN-TC-007'},
+    'paint-sprayer':    {available:true,  assetId:'AMN-PS-004'},
+    'dust-extractor':   {available:true,  assetId:'AMN-DE-015'},
+    'generator-5kva':   {available:true,  assetId:'AMN-GEN-003'},
+    'air-compressor':   {available:true,  assetId:'AMN-AC-009'},
+    'pressure-washer':  {available:true,  assetId:'AMN-PW-017'},
+    'laser-level':      {available:true,  assetId:'AMN-LL-006'},
+  },
+  'Boels Depot Rotterdam-Zuid': {
+    'mini-excavator':   {available:true,  assetId:'RTM-EXC-003'},
+    'plate-compactor':  {available:true,  assetId:'RTM-PC-007'},
+    'roller-compactor': {available:true,  assetId:'RTM-RC-001'},
+    'concrete-mixer':   {available:false},
+    'concrete-vibrator':{available:true,  assetId:'RTM-CV-002'},
+    'jackhammer':       {available:true,  assetId:'RTM-JH-009'},
+    'core-drill':       {available:true,  assetId:'RTM-CD-004'},
+    'rotary-hammer':    {available:true,  assetId:'RTM-RH-011'},
+    'angle-grinder':    {available:true,  assetId:'RTM-AG-008'},
+    'concrete-saw':     {available:true,  assetId:'RTM-CS-002'},
+    'scaffolding-4m':   {available:true,  assetId:'RTM-SC4-005'},
+    'scissor-lift':     {available:false},
+    'floor-sander':     {available:true,  assetId:'RTM-FS-006'},
+    'tile-cutter':      {available:false},
+    'paint-sprayer':    {available:true,  assetId:'RTM-PS-003'},
+    'dust-extractor':   {available:true,  assetId:'RTM-DE-012'},
+    'generator-5kva':   {available:true,  assetId:'RTM-GEN-002'},
+    'air-compressor':   {available:false},
+    'pressure-washer':  {available:true,  assetId:'RTM-PW-009'},
+    'laser-level':      {available:true,  assetId:'RTM-LL-004'},
+  },
+  'Boels Depot Utrecht-Centrum': {
+    'mini-excavator':   {available:false},
+    'plate-compactor':  {available:true,  assetId:'UTC-PC-004'},
+    'roller-compactor': {available:true,  assetId:'UTC-RC-002'},
+    'concrete-mixer':   {available:true,  assetId:'UTC-CM-007'},
+    'concrete-vibrator':{available:true,  assetId:'UTC-CV-003'},
+    'jackhammer':       {available:true,  assetId:'UTC-JH-014'},
+    'core-drill':       {available:true,  assetId:'UTC-CD-002'},
+    'rotary-hammer':    {available:true,  assetId:'UTC-RH-006'},
+    'angle-grinder':    {available:false},
+    'concrete-saw':     {available:true,  assetId:'UTC-CS-001'},
+    'scaffolding-4m':   {available:true,  assetId:'UTC-SC4-008'},
+    'scissor-lift':     {available:true,  assetId:'UTC-SL-001'},
+    'floor-sander':     {available:false},
+    'tile-cutter':      {available:true,  assetId:'UTC-TC-005'},
+    'paint-sprayer':    {available:false},
+    'dust-extractor':   {available:true,  assetId:'UTC-DE-009'},
+    'generator-5kva':   {available:true,  assetId:'UTC-GEN-004'},
+    'air-compressor':   {available:true,  assetId:'UTC-AC-006'},
+    'pressure-washer':  {available:false},
+    'laser-level':      {available:true,  assetId:'UTC-LL-003'},
+  },
+};
+// Other depots default to all available
+['Boels Depot Den Haag','Boels Depot Eindhoven','Boels Depot Groningen'].forEach(depot => {
+  DEPOT_STOCK[depot] = {};
+  PRODUCTS.forEach(p => { DEPOT_STOCK[depot][p.id] = {available:true, assetId:depot.slice(5,8).toUpperCase()+'-'+p.id.slice(0,3).toUpperCase()+'-00'+Math.floor(Math.random()*9+1)}; });
+});
+
+// ═══════════════════════ DISCOUNT MATRIX ═══════════════════════════
+// Discounts by customer type × product category × rental duration tier (days)
+const DISCOUNT_MATRIX = {
+  'B2B': {
+    earthmoving: {1:0.05, 7:0.12, 14:0.18, 28:0.22},
+    concrete:    {1:0.05, 7:0.10, 14:0.15, 28:0.20},
+    drilling:    {1:0.03, 7:0.08, 14:0.12, 28:0.16},
+    access:      {1:0.05, 7:0.12, 14:0.18, 28:0.22},
+    surface:     {1:0.03, 7:0.08, 14:0.12, 28:0.15},
+    power:       {1:0.03, 7:0.08, 14:0.12, 28:0.15},
+    cleaning:    {1:0.03, 7:0.06, 14:0.10, 28:0.12},
+    measuring:   {1:0.05, 7:0.10, 14:0.15, 28:0.18},
+  },
+  'Cash': {
+    earthmoving: {1:0, 7:0.05, 14:0.08, 28:0.10},
+    concrete:    {1:0, 7:0.05, 14:0.08, 28:0.10},
+    drilling:    {1:0, 7:0.03, 14:0.05, 28:0.08},
+    access:      {1:0, 7:0.05, 14:0.08, 28:0.10},
+    surface:     {1:0, 7:0.03, 14:0.05, 28:0.08},
+    power:       {1:0, 7:0.03, 14:0.05, 28:0.08},
+    cleaning:    {1:0, 7:0.03, 14:0.05, 28:0.08},
+    measuring:   {1:0, 7:0.03, 14:0.05, 28:0.08},
+  }
+};
+
 // ═══════════════════════════ VUE APP ════════════════════════════════
 const {createApp, nextTick} = Vue;
 createApp({
@@ -1518,6 +2017,28 @@ createApp({
       lastClaimId: '',
       ticketForm: { category:'', orderId:'', subject:'', priority:'Medium', description:'' },
       claimForm: { orderId:'', equipment:'', type:'', incidentDate:'', description:'' },
+      // ── Rental process flow ──
+      processSteps: [
+        {id:'inquiry',    label:'Inquiry'},
+        {id:'reservation',label:'Reservation'},
+        {id:'contract',   label:'Contract'},
+        {id:'onhire',     label:'On Hire'},
+      ],
+      reservationRef: '',
+      contractRef: '',
+      rentalStartDate: '',
+      rentalEndDate: '',
+      fulfillmentType: 'pickup',
+      deliveryAddress: '',
+      depositAmount: 0,
+      depositPaid: false,
+      contractSigned: false,
+      signatureStarted: false,
+      contractNotes: '',
+      availabilityChecked: false,
+      availabilityResults: {},
+      stockResolutions: {},
+      _signing: false,
       mockOrders: MOCK_ORDERS,
       mockInvoices: MOCK_INVOICES,
       mockTickets: MOCK_TICKETS,
@@ -1562,6 +2083,27 @@ createApp({
     },
     ytdSpend() {
       return this.mockInvoices.filter(i=>i.status==='paid').reduce((s,i)=>s+i.amount,0).toFixed(0);
+    },
+    customerType() {
+      if (!this.customer) return 'Cash';
+      return this.customer.id.startsWith('B2B') ? 'B2B' : 'Cash';
+    },
+    discountedCartTotal() {
+      return this.cart.reduce((sum, item) => sum + this.discountedLineTotal(item), 0);
+    },
+    avgDiscount() {
+      if (this.cart.length === 0) return 0;
+      const total = this.cart.reduce((s,i) => s + this.getItemDiscount(i), 0);
+      return total / this.cart.length;
+    },
+    allAvailable() {
+      if (!this.availabilityChecked || this.cart.length === 0) return false;
+      return this.cart.every(item => this.getAvailability(item.product.id).available);
+    },
+    stockResolved() {
+      if (this.allAvailable) return true;
+      const unavail = this.cart.filter(item => !this.getAvailability(item.product.id).available);
+      return unavail.length > 0 && unavail.every(item => !!this.stockResolutions[item.product.id]);
     },
     recentActivity() {
       return [
@@ -1625,6 +2167,131 @@ createApp({
       this.cart = [];
       this.quoteRef = this.genRef();
       this.view = 'catalog';
+    },
+    // ── Discount & pricing ──
+    getItemDiscount(item) {
+      const type = this.customerType;
+      const cat = item.product.category;
+      const days = item.durationDays;
+      const matrix = (DISCOUNT_MATRIX[type] && DISCOUNT_MATRIX[type][cat]) || {};
+      for (const tier of [28, 14, 7, 1]) {
+        if (days >= tier && matrix[tier] !== undefined) return matrix[tier];
+      }
+      return 0;
+    },
+    discountedLineTotal(item) {
+      return this.lineTotal(item) * (1 - this.getItemDiscount(item));
+    },
+    // ── Reservation flow ──
+    initReservation() {
+      if (this.cart.length === 0) return;
+      this.reservationRef = 'RES-' + new Date().getFullYear() + '-' + (Math.floor(Math.random()*90000)+10000);
+      const today = new Date();
+      const maxDays = Math.max(...this.cart.map(i => i.durationDays));
+      const end = new Date(today); end.setDate(end.getDate() + maxDays);
+      this.rentalStartDate = today.toISOString().split('T')[0];
+      this.rentalEndDate = end.toISOString().split('T')[0];
+      this.availabilityChecked = false;
+      this.availabilityResults = {};
+      this.stockResolutions = {};
+      this.fulfillmentType = 'pickup';
+      this.deliveryAddress = '';
+      this.cartOpen = false;
+      this.view = 'reservation';
+    },
+    checkAvailability() {
+      const stock = DEPOT_STOCK[this.depot] || {};
+      this.availabilityResults = {};
+      this.stockResolutions = {};
+      this.cart.forEach(item => {
+        this.availabilityResults[item.product.id] = stock[item.product.id] || {available: false};
+      });
+      this.availabilityChecked = true;
+    },
+    getAvailability(productId) {
+      return this.availabilityResults[productId] || {available: false, assetId: '—'};
+    },
+    setResolution(productId, resolution) {
+      if (resolution) this.stockResolutions[productId] = resolution;
+    },
+    // ── Contract flow ──
+    initContract() {
+      this.contractRef = 'CON-' + new Date().getFullYear() + '-' + (Math.floor(Math.random()*90000)+10000);
+      this.depositAmount = this.customerType === 'Cash'
+        ? Math.round(this.discountedCartTotal * 1.21 * 0.30)
+        : 0;
+      this.depositPaid = false;
+      this.contractSigned = false;
+      this.signatureStarted = false;
+      this.contractNotes = '';
+      this.view = 'contract';
+      this.$nextTick(() => {
+        if (this.$refs.sigCanvas) {
+          const ctx = this.$refs.sigCanvas.getContext('2d');
+          ctx.clearRect(0, 0, 600, 130);
+        }
+      });
+    },
+    goOnHire() {
+      if (!this.contractSigned) return;
+      if (this.depositAmount > 0 && !this.depositPaid) return;
+      const newOrder = {
+        id: this.contractRef.replace('CON-', 'ORD-'),
+        date: this.rentalStartDate,
+        returnDate: this.rentalEndDate,
+        status: 'active',
+        depot: this.depot,
+        items: this.cart.map(i => ({
+          name: i.product.name, qty: i.quantity,
+          days: i.durationDays, total: this.discountedLineTotal(i)
+        })),
+        total: Math.round(this.discountedCartTotal * 1.21 * 100) / 100,
+        paid: false
+      };
+      this.mockOrders.unshift(newOrder);
+      this.view = 'onhire';
+    },
+    startNewRental() {
+      this.cart = [];
+      this.quoteRef = this.genRef();
+      this.view = 'catalog';
+    },
+    formatDate(d) {
+      if (!d) return '';
+      return new Date(d + 'T12:00:00').toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'});
+    },
+    // ── Digital signature ──
+    startSign(e) {
+      this._signing = true;
+      this.signatureStarted = true;
+      const canvas = this.$refs.sigCanvas;
+      const ctx = canvas.getContext('2d');
+      const rect = canvas.getBoundingClientRect();
+      const sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+      const cx = e.clientX || e.touches?.[0]?.clientX || 0;
+      const cy = e.clientY || e.touches?.[0]?.clientY || 0;
+      ctx.beginPath();
+      ctx.moveTo((cx - rect.left) * sx, (cy - rect.top) * sy);
+    },
+    drawSign(e) {
+      if (!this._signing) return;
+      const canvas = this.$refs.sigCanvas;
+      const ctx = canvas.getContext('2d');
+      const rect = canvas.getBoundingClientRect();
+      const sx = canvas.width / rect.width, sy = canvas.height / rect.height;
+      const cx = e.clientX || e.touches?.[0]?.clientX || 0;
+      const cy = e.clientY || e.touches?.[0]?.clientY || 0;
+      ctx.lineWidth = 2.5; ctx.lineCap = 'round'; ctx.strokeStyle = '#0D1B2A';
+      ctx.lineTo((cx - rect.left) * sx, (cy - rect.top) * sy);
+      ctx.stroke();
+    },
+    endSign() { this._signing = false; },
+    confirmSignature() { this.contractSigned = true; },
+    clearSignature() {
+      const canvas = this.$refs.sigCanvas;
+      if (canvas) canvas.getContext('2d').clearRect(0, 0, 600, 130);
+      this.signatureStarted = false;
+      this.contractSigned = false;
     },
     loginAs(c) {
       this.customer = c;
